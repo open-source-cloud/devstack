@@ -21,7 +21,8 @@ shared_service(ctx, name, engine, major_version, status, started_at)
 service_ref(ctx, project, service, shared_service)          -- ref count = COUNT(*)
 port_alloc(ctx, owner, purpose, port UNIQUE)
 provisioned(ctx, project, kind, name, created_at)           -- db/role/bucket ownership ledger
-hook_run(ctx, project, hook, scope_key)                     -- idempotency for firstRun etc.
+hook_run(ctx, project, hook, scope_key)                     -- idempotency for firstRun etc. (spec 11)
+saga_phase(ctx, workspace, scope, phase, status, fingerprint)-- up-saga resumability (spec 09)
 event_log(ctx, ts, kind, subject, reason)
 schema_version(version)
 ```
@@ -36,21 +37,21 @@ schema_version(version)
 - Bind-test (`net.Listen 127.0.0.1:port`) is **advisory only**; **union** it with ports already published by Docker (SDK `ContainerList` port bindings) so Docker-Desktop-VM-published ports are detected (a host bind-test doesn't reflect the VM proxy).
 - Prefer **not publishing** host ports at all (DNS-over-shared-network default) — allocate only on explicit host-reachability requests.
 
-## The `up` saga (`internal/orchestrate`)
-`up` runs ~8 phases: clone → network ensure → shared services → provision DB/bucket → resolve secrets → CA/trust → generate → `compose up`. A failure mid-way (e.g. provisioning fails after the shared stack started and ref rows were inserted) must not leave a half-up workspace + lying ledger.
+## The `up` saga (`internal/orchestrate`) — see [spec 09](09-orchestration-and-onboarding.md)
+`up` runs ~10 named phases (preflight → clone → network ensure → shared services → provision DB/bucket → resolve secrets → CA/trust → generate → `compose up` → hooks; the canonical list with per-phase lock/skip/compensation rules is in [spec 09](09-orchestration-and-onboarding.md)). A failure mid-way (e.g. provisioning fails after the shared stack started and ref rows were inserted) must not leave a half-up workspace + lying ledger.
 - Model as a **saga**: each phase is **named, idempotent, and resumable**, with durable phase-state and a **compensating action** on failure (e.g. roll back the ref row if the project stack never came up).
 - Re-running `up` skips satisfied phases (powers one-command onboarding, feature #1).
 - Live **bubbletea checklist** when TTY; plain/`--json` fallback otherwise.
 - On unexplained inconsistency, `doctor --rebuild-state` + `shared doctor` repair.
 
-## Lifecycle hooks (`internal/hooks`)
-- Declarative `postUp` / `preDown` / `firstRun` / `postPull`, run on the host or via `compose exec`, with the same `${ref}`/secret interpolation.
+## Lifecycle hooks (`internal/hooks`) — see [spec 11](11-lifecycle-hooks.md)
+- Declarative `preUp` / `postUp` / `preDown` / `firstRun` / `postPull`, run on the host or via `compose exec`, with the same `${ref}`/secret interpolation.
 - **`firstRun` idempotency tracked in the state DB** (keyed per provisioned data volume) so it survives restarts — this is what correctly replaces Postgres `initdb.d` (which never re-runs on an existing shared volume). Canonical uses: DB migrations, seeding, app-key generation, dependency install.
 
-## `doctor` capability matrix (`internal/doctor`)
+## `doctor` capability matrix (`internal/doctor`) — see [spec 13](13-doctor-diagnostics-and-teardown.md)
 Runs the **real branch logic** (not docs) for: docker daemon reachable + **correct context**, `docker compose` ≥ v2.20, git ≥ 2.30, disk for volumes, shared-network health, port conflicts, CA trust state (host + Firefox/NSS + Windows-on-WSL2), secrets-provider reachability, **stale ref rows vs live containers**, `*.localhost`/resolver per platform, **9p state-dir warning**, keyring presence. Every failure → one-line remediation; `--fix` where safe.
 
-## Teardown (`workspace destroy` / `uninstall`)
+## Teardown (`workspace destroy` / `uninstall`) — see [spec 13](13-doctor-diagnostics-and-teardown.md)
 Reverse **all** machine-global artifacts, with explicit data-loss confirmation:
 external network · shared containers + **named volumes (Postgres data!)** · the SQLite ledger · **root CA from host + Firefox + Windows stores** · alias symlinks · cloudflared creds · keyring entries · template cache. Orphaning a CA (a security artifact) or dangling symlinks is a defect.
 

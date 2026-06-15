@@ -50,12 +50,36 @@ Your friend's existing devdock users are the most likely early adopters. A `devs
 - **Recommendation:** include `devstack import` + a migration guide in v1.
 - **Your answer:** _______
 
-### Q-NAME · canonical tool name + alias set — **blocks M0 installer/completion**
-Docs use working name **`devstack`** (matches `devstack.yaml` / `apiVersion: devstack/v1`). The repo folder is `devdock-go`. You mentioned aliases `rq`, `uranus`.
-- **Recommendation:** pick the canonical binary name and the full alias list up front so the installer + completion wire correctly. (Heads-up: `devstack` collides with OpenStack DevStack; `devdock` is your friend's tool. Consider a distinct name.)
-- **Your answer:** _______ *(canonical name: ____ ; aliases: ____ )*
+### Q-NAME · canonical tool name + alias set — **RESOLVED**
+Canonical name **`devstack`** (matches `devstack.yaml` / `apiVersion: devstack/v1`), built from `./cmd/devstack`. The Go module + GitHub repo are **`github.com/open-source-cloud/devstack`** (the local checkout folder is still `devdock-go`). Aliases **`rq`** and **`uranus`** dispatch via `argv[0]` symlinks.
+- **Decision:** binary/package name `devstack`; aliases `rq`, `uranus`. Load-bearing for the install-method detection + upgrade-remediation strings in [spec 14](specs/14-self-update-and-migration.md) (Homebrew formula / `.deb`/`.rpm` package name = `devstack`) and the alias-relink step in [spec 13](specs/13-doctor-diagnostics-and-teardown.md)/[spec 14](specs/14-self-update-and-migration.md). The OpenStack DevStack name collision is accepted for now; revisit only if a public distribution-name conflict arises.
 
 ---
+
+### Q-PROFILE · profile definition plane + default-profile policy — **blocks M6 (feature #4)** (surfaced by [spec 12](specs/12-service-profiles-and-selective-up.md))
+Should service slices be defined **per-repo** (each `devstack.yaml` carries its own Compose `profiles:` membership tags), **at the workspace level** (`workspace.yaml groups:` naming cross-repo slices like `frontend`), or **both**? And what does `up` start with no `--profile`? Per-repo maximizes repo portability but no single repo can express a cross-repo slice; workspace `groups` express cross-repo slices but couple the workspace to service names inside repos it doesn't own. Sub-question: should `down --profile`/`stop --profile` exist for pause-without-teardown, or is keeping `down` whole-project sufficient for v1?
+- **Recommendation:** **both**, unioned by name; `defaultProfile` opt-in in `workspace.yaml` with `all` as the no-config default; keep `down` whole-project (enumerate by tool-owned label, never `--profile`) and defer `stop --profile`.
+- **Your answer:** _______
+
+### Q-SAGA-PARALLEL · parallel vs sequential project `compose-up` — **affects M6 (feature #1)** (surfaced by [spec 09](specs/09-orchestration-and-onboarding.md))
+Should the saga's `compose-up` phase bring multiple project stacks up **in parallel** (faster on multi-project workspaces, but interleaves image-pull progress and complicates the nested checklist + per-project compensation) or **sequentially** for clarity?
+- **Recommendation:** sequential in v1; add parallel behind a `--parallel` flag once the checklist model proves stable.
+- **Your answer:** _______
+
+### Q-HEALTHWAIT · who owns the readiness poll — **affects M6 (feature #3)** (surfaced by [spec 10](specs/10-health-readiness-and-ordering.md))
+Should the intra-project wave rely on `docker compose up --wait` (reserving the read-only SDK poll strictly for the cross-project shared-stack gate), or should `internal/health` **always** own the poll for uniform `--json` records and a single timeout/backoff policy?
+- **Recommendation:** own the poll uniformly; use `--wait` only as belt-and-suspenders within a project.
+- **Your answer:** _______
+
+### Q-HOOK-SCOPE · `firstRun` data-volume identity — **affects M6 (feature #5)** (surfaced by [spec 11](specs/11-lifecycle-hooks.md))
+Should `firstRun`'s scope key be the provisioned `(db, role)` tuple (survives a Postgres image upgrade that keeps the volume) **or** the Docker named-volume id (re-arms whenever the volume object is recreated)? They diverge on the "upgraded the Postgres major but kept the data" path.
+- **Recommendation:** the `(db, role)` tuple, keyed alongside the `provisioned` ledger; revisit if image-upgrade re-seeding becomes a real workflow.
+- **Your answer:** _______
+
+### Q-DOCTOR-FIX · interactive tier for borderline repairs — **affects M6 (feature #2)** (surfaced by [spec 13](specs/13-doctor-diagnostics-and-teardown.md))
+Should `doctor --fix` ever offer an *interactive* (non-`--yes`) tier for borderline-destructive repairs (reassigning a port a foreign process holds, recreating a drifted *stateless* shared service), or is the safe/destroy line absolute?
+- **Recommendation:** keep `--fix` strictly non-destructive; route everything else through the named teardown / `shared` verbs.
+- **Your answer:** _______
 
 ## Decisions already made (recorded from our conversation)
 - Ambition: **open-source product**.
@@ -63,3 +87,4 @@ Docs use working name **`devstack`** (matches `devstack.yaml` / `apiVersion: dev
 - Config: **clean-slate schema** (not a devdock drop-in).
 - Capacity: **solo, full-time (~40h/week)**.
 - Compose generation: **programmatic via compose-go**, not string-templated YAML.
+- Name: canonical binary **`devstack`**; aliases **`rq`, `uranus`**; module + GitHub repo **`github.com/open-source-cloud/devstack`** (see [Q-NAME](#q-name--canonical-tool-name--alias-set--resolved)).

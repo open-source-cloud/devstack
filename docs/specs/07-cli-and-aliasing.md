@@ -20,24 +20,28 @@ The command surface, the multi-alias mechanism (one binary invocable as `rq`, `u
 
 ## Command surface (working)
 ```
-devstack up [--profile P] [--build] [--rebuild] [--json]
-devstack down [project...]
-devstack status                 # multi-repo git + service health table
+devstack up [project...] [--profile P]... [--build] [--rebuild] [--no-hooks] [--skip-clone] [--no-preflight] [--health-timeout D] [--json]
+devstack down [project...]               # whole-project teardown; autostop default off
+devstack status                 # multi-repo git + service + ref-graph + last-saga table
 devstack shell <service>
 devstack logs [service...] [-f]
-devstack doctor [--fix]
+devstack doctor [--fix] [--rebuild-state] [--json]
 devstack ws clone|sync|status [all|<name>...]
 devstack shared status|gc|doctor
+devstack db gc                  # reclaim ORPHANED provisioned roles/dbs/buckets (confirm); v2 adds snapshot/restore/reset
 devstack secrets login <provider> | keygen
 devstack trust install|uninstall|status
 devstack dns setup              # opt-in .test
 devstack tunnel login|create|route|up|down
 devstack alias add|remove <name>
 devstack template init|lint|test          # (registry push/pull = v2)
-devstack import <path/to/devdock/project.yaml>   # optional migrator
-devstack self update
-devstack workspace destroy      # reverse ALL artifacts (see ARCHITECTURE §7.3)
+devstack import <path/to/devdock/project.yaml> [--dry-run] [--out DIR] [--force]   # optional migrator
+devstack self update [--force]            # refuses on package-managed installs
+devstack workspace destroy [--purge-data] [--yes]   # this workspace's stacks/refs (+ data with --purge-data)
+devstack uninstall [--yes]      # reverse ALL machine-global artifacts (see ARCHITECTURE §7.3)
 ```
+
+> Verb **semantics** live in their feature specs: `up`/`down`/`status` + saga flags ([spec 09](09-orchestration-and-onboarding.md)); `--profile` slices ([spec 12](12-service-profiles-and-selective-up.md)); health gating / `--health-timeout` ([spec 10](10-health-readiness-and-ordering.md)); `--no-hooks` ([spec 11](11-lifecycle-hooks.md)); `doctor`/`workspace destroy`/`uninstall`/`db gc` ([spec 13](13-doctor-diagnostics-and-teardown.md)); `self update`/`import` ([spec 14](14-self-update-and-migration.md)).
 
 ## Verified constraints / gotchas
 - **fang import path `charm.land/fang/v2`** (vanity), Go 1.25, "experimental" — wrap, pin.

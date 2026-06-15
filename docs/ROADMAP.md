@@ -30,13 +30,14 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 - Two-file schema (`workspace.yaml` + `devstack.yaml`) with `apiVersion` header; goccy parse w/ positions; jsonschema + validator/v10 + custom resolver (cross-refs, cycles).
 - Template engine with custom delimiters + ported filters; `renderText`/`renderYAML`; `extends`-chain render-then-merge; layered merge with explicit list strategy.
 - Compose model + `compose-go` validate/normalize; `${ref}` resolution against the workspace graph; `writeIfChanged` + atomic write; SHA-256 rebuild-hash ledger.
-- Golden-file conformance suite; deterministic-output CI check; *(optional)* `devstack import` from devdock `project.yaml`.
+- Golden-file conformance suite; deterministic-output CI check; *(optional)* `devstack import` from devdock `project.yaml` ([spec 14](specs/14-self-update-and-migration.md) `internal/migrate` — pure YAML→YAML, no lock, ships early).
 
 ### M2 — Shared services + workspace lifecycle (the differentiator) · **9w**
 - Tool-owned external network (pinned name, idempotent ensure/teardown); shared stack + per-project stacks with `shared-*` aliases; collision lint.
 - Ref-counting in SQLite (inside the lock) + self-healing reconcile from live Compose labels (`All=true`, exclude one-off); per-`(engine,major-version)` shared instances.
 - Provision-on-demand per-project Postgres role/db (pgx, idempotent, PG18 volume path), redis index/prefix, minio bucket+key; ownership ledger + orphan gc.
 - Port allocation inside the lock (host bind-test unioned with SDK port bindings); `shared status`/`doctor`/`gc`; never-recreate-stateful-shared guard.
+- The `up`/bootstrap **saga** ([spec 09](specs/09-orchestration-and-onboarding.md)) begins landing here — its network/shared/provision/compose-up phases sit on this milestone's workspace+provision substrate; the health/hooks/profiles phases complete in M6.
 
 ### M3 — Multi-repo git + alias polish · **4w**
 - `gitx` system-git wrapper (hardened env, `porcelain=v2` status, `GIT_ASKPASS` token shim, shorthand expansion, submodule/shallow opt-in).
@@ -56,10 +57,11 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 - cloudflared optional managed tunnel (default DOWN, loud confirm, manual wildcard CNAME doc, secret-bearing-service refusal).
 
 ### M6 — Orchestrated onboarding, doctor, health, hooks, profiles · **8w**
-- Multi-phase resumable `up`/bootstrap **saga** with durable phase-state + compensating rollback; bubbletea checklist + plain fallback.
-- Health/readiness gating (typed healthchecks, `dependsOn: healthy`); lifecycle hooks (`postUp`/`preDown`/`firstRun`/`postPull`) with idempotency ledger (solves the `initdb.d` gap); profiles/selective-up.
-- `doctor` capability-probe matrix with remediations and `--fix`; `doctor --rebuild-state`; self-update with install-method detection + alias relink + state migration.
-- `workspace destroy`/`uninstall` reversing **all** artifacts (network, volumes w/ confirm, CA from all stores, symlinks, keyring, cloudflared creds, cache).
+> Specs: [09](specs/09-orchestration-and-onboarding.md) (saga) · [10](specs/10-health-readiness-and-ordering.md) (health) · [11](specs/11-lifecycle-hooks.md) (hooks) · [12](specs/12-service-profiles-and-selective-up.md) (profiles) · [13](specs/13-doctor-diagnostics-and-teardown.md) (doctor/teardown) · [14](specs/14-self-update-and-migration.md) (self-update/migration).
+- Multi-phase resumable `up`/bootstrap **saga** with durable phase-state + compensating rollback; bubbletea checklist + plain fallback ([spec 09](specs/09-orchestration-and-onboarding.md)).
+- Health/readiness gating (typed healthchecks, `dependsOn: healthy`, [spec 10](specs/10-health-readiness-and-ordering.md)); lifecycle hooks (`preUp`/`postUp`/`preDown`/`firstRun`/`postPull`) with idempotency ledger (solves the `initdb.d` gap, [spec 11](specs/11-lifecycle-hooks.md)); profiles/selective-up ([spec 12](specs/12-service-profiles-and-selective-up.md)).
+- `doctor` capability-probe matrix with remediations and `--fix`; `doctor --rebuild-state` ([spec 13](specs/13-doctor-diagnostics-and-teardown.md)); self-update with install-method detection + alias relink + state migration ([spec 14](specs/14-self-update-and-migration.md)).
+- `workspace destroy`/`uninstall` reversing **all** artifacts (network, volumes w/ confirm, CA from all stores, symlinks, keyring, cloudflared creds, cache) ([spec 13](specs/13-doctor-diagnostics-and-teardown.md)).
 
 ### M7 — Hardening, docs, cross-platform test matrix, 1.0 GA · **6w**
 - Integration tests via `testcontainers-go`/dind lane (network/ref-count/provision/health) behind build tags; concurrency-race tests; documented manual macOS+WSL2 checklist.

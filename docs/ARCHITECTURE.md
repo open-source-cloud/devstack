@@ -126,7 +126,7 @@ Standard Go layout: `/cmd/devstack/main.go` (thin), `/internal/*` (all implement
 | `internal/merge` | Layered deep-merge with explicit list strategy (replace default, `$merge: append` opt-in); guards shared-reference mutation. |
 | `internal/generate` | Compose-model build + `compose-go` validate/normalize, `${ref}` resolution against the workspace graph, secret-key emission, `writeIfChanged` + atomic rename, SHA-256 rebuild-hash ledger. |
 | `internal/docker` | `moby/moby/client` wrapper (read-only) + `docker compose` CLI driver with explicit `-p` and tool-owned labels; compose/version/context preflight. |
-| `internal/workspace` | **The differentiator:** shared-stack lifecycle, ref-counting + self-healing reconcile, port allocation, per-(engine,major-version) shared instances, profile/selective-up interaction. |
+| `internal/workspace` | **The differentiator:** shared-stack lifecycle, ref-counting + self-healing reconcile, port allocation, per-(engine,major-version) shared instances, profile/selective-up interaction (the reference-graph walk behind `--profile`, [spec 12](specs/12-service-profiles-and-selective-up.md)). |
 | `internal/state` | SQLite ledger (keyed by Docker context), WAL+busy_timeout, versioned migrations + backup, rolling event log, `doctor --rebuild-state` from live Docker labels. |
 | `internal/lock` | `gofrs/flock` cross-process advisory lock wrapping all global mutations; detects 9p/networked state dirs and warns. |
 | `internal/provision` | `pgx/v5` idempotent per-project Postgres role/db; redis index/prefix; minio bucket+key; ownership ledger + orphan gc. |
@@ -136,12 +136,13 @@ Standard Go layout: `/cmd/devstack/main.go` (thin), `/internal/*` (all implement
 | `internal/trust` | mkcert (or owned CA) host/Firefox trust install; WSL2 `certutil.exe` interop; trust status/install/uninstall. |
 | `internal/dns` | `*.localhost` guidance + idempotent marker-fenced `/etc/hosts` edits (sudo), removable on uninstall. |
 | `internal/tunnel` | cloudflared shared container, named-tunnel create/route/up/down, `Tunnel` interface; secret-bearing-service refusal guard. |
-| `internal/doctor` | Cross-platform capability-probe matrix with one-line remediations and `--fix`. |
-| `internal/hooks` | Lifecycle hooks (`postUp`/`preDown`/`firstRun`/`postPull`) with an idempotency ledger; powers migrations/seeding. |
-| `internal/health` | Typed healthchecks + `dependsOn: healthy` graph gating. |
-| `internal/orchestrate` | The multi-phase `up`/bootstrap **saga**: named resumable phases with durable phase-state + compensating rollback; TUI checklist + plain fallback. |
+| `internal/doctor` | Cross-platform capability-probe matrix with one-line remediations and `--fix`; also owns recovery (`--rebuild-state`) and teardown (`workspace destroy`/`uninstall`/`db gc`). See [spec 13](specs/13-doctor-diagnostics-and-teardown.md). |
+| `internal/hooks` | Lifecycle hooks (`preUp`/`postUp`/`preDown`/`firstRun`/`postPull`) with an idempotency ledger; powers migrations/seeding. See [spec 11](specs/11-lifecycle-hooks.md). |
+| `internal/health` | Typed healthchecks + `dependsOn: healthy` graph gating (cross-project read-only poll + compose-native ordering). See [spec 10](specs/10-health-readiness-and-ordering.md). |
+| `internal/orchestrate` | The multi-phase `up`/bootstrap **saga**: named resumable phases with durable phase-state + compensating rollback; TUI checklist + plain fallback. See [spec 09](specs/09-orchestration-and-onboarding.md). |
 | `internal/xdg` | XDG path resolution; WSL2 detection; refuse `/mnt/*` working dirs; template-cache GC/TTL. |
-| `internal/migrate` | `devstack import` reading an old devdock `project.yaml` → new `workspace.yaml` + `devstack.yaml` split (optional; high-leverage for the existing user base). |
+| `internal/migrate` | `devstack import` reading an old devdock `project.yaml` → new `workspace.yaml` + `devstack.yaml` split (optional; high-leverage for the existing user base); plus the three-artifact versioning policy + self-update choreography. See [spec 14](specs/14-self-update-and-migration.md). |
+| `internal/version` | Build-stamped identity (`Version`/`Commit`/`Date` via ldflags); consumed by `--version` and the update notifier. See [spec 14](specs/14-self-update-and-migration.md). |
 | `pkg/pluginsdk` | Public plugin contract — **deferred to v2** (out-of-tree secrets/tunnel providers). |
 
 Every fast-moving or risky dependency (docker client, template engine, secrets provider, git, trust store) sits behind an internal interface so it can be swapped or vendored.
@@ -156,15 +157,15 @@ These emerged from adversarial review and are the things most likely to bite. Ea
 Two simultaneous `up` invocations (two terminals; IDE + terminal; a watch script) race on network-ensure (TOCTOU between inspect and create), port allocation, ref-count rows, and `CREATE ROLE`. SQLite file locking is unreliable on WSL2/9p. **Mitigation (build first, in M0):** a coarse `gofrs/flock` advisory lock around *every* operation that mutates the ledger or the shared stack; WAL + `busy_timeout`; idempotent guarded SQL; port allocation done inside the lock; `doctor` warns on 9p state dirs. Reads are lock-free snapshots. See [spec 08](specs/08-state-locking-and-lifecycle.md).
 
 ### 7.2 Partial-failure / rollback for the multi-phase `up`
-`up` runs ~8 phases (clone → network → shared services → provision DB → secrets → CA → generate → compose up). A failure in phase 4 after phase 3 started the shared stack and inserted ref rows leaves a half-up workspace and a lying ledger. **Mitigation:** model `up` as a **saga** with durable phase-state and compensating actions; `doctor --rebuild-state` reconstructs the ledger from live Docker labels.
+`up` runs ~8 phases (clone → network → shared services → provision DB → secrets → CA → generate → compose up). A failure in phase 4 after phase 3 started the shared stack and inserted ref rows leaves a half-up workspace and a lying ledger. **Mitigation:** model `up` as a **saga** with durable phase-state and compensating actions; `doctor --rebuild-state` reconstructs the ledger from live Docker labels. The saga's named phases, the `saga_phase` resumability table, and the lock-granularity rule are detailed in [spec 09](specs/09-orchestration-and-onboarding.md).
 
 ### 7.3 Teardown / uninstall
-devstack creates artifacts everywhere: the external network, shared volumes (Postgres data!), the SQLite DB, **root CA in host + Firefox + Windows trust stores**, alias symlinks, cloudflared creds, keyring entries, the cache. `devstack workspace destroy` / `devstack uninstall` must reverse **all** of it, with explicit data-loss confirmation for volumes, and must never orphan a CA (a security artifact) or dangling symlinks.
+devstack creates artifacts everywhere: the external network, shared volumes (Postgres data!), the SQLite DB, **root CA in host + Firefox + Windows trust stores**, alias symlinks, cloudflared creds, keyring entries, the cache. `devstack workspace destroy` / `devstack uninstall` must reverse **all** of it, with explicit data-loss confirmation for volumes, and must never orphan a CA (a security artifact) or dangling symlinks. The teardown order and the `--fix`-vs-destroy boundary are owned by [spec 13](specs/13-doctor-diagnostics-and-teardown.md).
 
 ### 7.4 Migration / versioning (three things evolve independently)
 1. **Config schema** — `apiVersion: devstack/v1`; define the unknown-key / `additionalProperties` forward-compat policy.
 2. **State-DB schema** — versioned migrations table, backup-before-migrate, strictly additive within a major.
-3. **Generated compose format** — `compose-go` re-normalization causes churny diffs; decide whether generated artifacts are committed (deterministic, reviewable) or gitignored (regenerated freely). Either way, golden output controls the churn.
+3. **Generated compose format** — `compose-go` re-normalization causes churny diffs; decide whether generated artifacts are committed (deterministic, reviewable) or gitignored (regenerated freely). Either way, golden output controls the churn. The compatibility guarantees for all three artifacts (config `apiVersion`, state `schema_version`, generated-compose byte-stability) and the self-update choreography tying them together are specified in [spec 14](specs/14-self-update-and-migration.md).
 
 ### 7.5 Secrets ↔ generation coupling, and in-memory exposure
 The "host env auto-propagates into compose" assumption is **false** (verified). Each secret name must be emitted **per service** into the generated compose (as a valueless `environment: [NAME]` key) and the value passed via `exec.Cmd.Env` — so secrets and generation are coupled and need one owner plus a CI test asserting **no secret value ever lands in any generated file**. Resolved secrets also live as plain Go strings (GC'd, swappable, visible via `/proc/<pid>/environ` to same-user processes). Decision: document the threat model honestly rather than over-engineering `mlock` for a local dev tool. See [spec 04](specs/04-secrets.md).

@@ -1,6 +1,6 @@
 # devstack
 
-> Working name. The repo folder is `devdock-go`; the binary name is a placeholder you can change at any time, and the tool can be invoked under multiple aliases (e.g. `rq`, `uranus`) via the [alias system](docs/specs/07-cli-and-aliasing.md). These docs use **`devstack`** consistently because it matches the config schema (`devstack.yaml`, `apiVersion: devstack/v1`).
+> The binary is **`devstack`** (Go module + GitHub repo `github.com/open-source-cloud/devstack`; the local checkout folder is `devdock-go`). The same binary is invocable under aliases (e.g. `rq`, `uranus`) via the [alias system](docs/specs/07-cli-and-aliasing.md). Config files are `workspace.yaml` + `devstack.yaml` (`apiVersion: devstack/v1`).
 
 A single-binary CLI that manages Docker-based development environments and **shares infrastructure across projects** — one warm Postgres / Redis / MinIO for many repos instead of a duplicate stack per project. It is a clean-slate, Go reimplementation of the ideas behind [`devdock`](../devdock) (the Python predecessor), redesigned around a *workspace* of shared services that independent project stacks attach to.
 
@@ -18,7 +18,7 @@ A developer working across 8 microservices today runs 8 Postgres containers, 8 R
 
 ## Status
 
-📋 **Design / spec phase.** No code yet. This repository currently holds the architecture and specs that will drive implementation (spec-driven development). See the doc index below.
+🚧 **M0 foundations implemented; design ongoing.** The spine is in place and green (`make ci`): the CLI tree + `argv[0]` aliasing, the `flock` cross-process lock, the SQLite ledger, XDG/WSL2 handling, a read-only Docker client, and a real `doctor` preflight. The rest of the surface is spec-driven (see the doc index). Try it: `make build && make smoke`.
 
 ## How it works (one paragraph)
 
@@ -42,6 +42,12 @@ A developer working across 8 microservices today runs 8 Postgres containers, 8 R
 6. [Multi-repo git](docs/specs/06-git.md)
 7. [CLI & aliasing](docs/specs/07-cli-and-aliasing.md)
 8. [State, locking & lifecycle](docs/specs/08-state-locking-and-lifecycle.md) — the concurrency spine
+9. [Orchestration & one-command onboarding](docs/specs/09-orchestration-and-onboarding.md) — the `up` saga
+10. [Health, readiness & dependency ordering](docs/specs/10-health-readiness-and-ordering.md)
+11. [Lifecycle hooks](docs/specs/11-lifecycle-hooks.md)
+12. [Service profiles & selective up](docs/specs/12-service-profiles-and-selective-up.md)
+13. [Doctor, diagnostics & teardown](docs/specs/13-doctor-diagnostics-and-teardown.md)
+14. [Self-update, notifications & migration](docs/specs/14-self-update-and-migration.md)
 
 ## Quickstart (target UX — not yet implemented)
 

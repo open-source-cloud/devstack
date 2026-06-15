@@ -9,7 +9,7 @@ Define the clean-slate, two-file YAML config model and the loading/validation pi
 - **Two files** (replaces devdock's single `project.yaml`):
   - `workspace.yaml` at the workspace root — the **shared layer**: shared services, aliases, secret providers, network/proxy/tunnel, project list.
   - `devstack.yaml` inside each repo — the **portable project layer**: services → template + params, env, and which shared services it `uses`.
-  - Optional overlays `workspace.<env>.yaml` / `devstack.<env>.yaml`, deep-merged over the base when a profile is active (default `dev`).
+  - Optional overlays `workspace.<env>.yaml` / `devstack.<env>.yaml`, deep-merged over the base when an **env profile** is active (default `dev`). This `profiles.default` *env overlay* (config layering) is a **distinct concept** from the service **slices**/`groups:` used for selective `up` — see [spec 12](12-service-profiles-and-selective-up.md).
 - **Parse** with `goccy/go-yaml` (chosen for `FormatError` source positions + AST/path access — *not* for yaml.v3 compatibility; it is not a drop-in).
 - **Validate in two layers:** JSON Schema draft 2020-12 (`santhosh-tekuri/jsonschema/v6`) for structure **and** as the editor artifact; `go-playground/validator/v10` + a **custom resolver** for semantics (cross-refs, cycles, capability matching).
 - **`kind`/`apiVersion: devstack/v1`** header on every file for forward-compat.
@@ -23,7 +23,7 @@ apiVersion: devstack/v1
 kind: Workspace
 name: acme
 aliases: [rq, uranus]                 # binary invocable under these names
-profiles: { default: dev }
+profiles: { default: dev }            # env-overlay selector (NOT service slices — see spec 12)
 secrets:
   providers:
     - { name: vault, kind: infisical, env: prod, projectId: "..." }
@@ -95,7 +95,7 @@ This is deliberately narrower and more diagnosable than devdock's `${service.var
 - [ ] CI fails if the committed JSON Schema drifts from the Go structs.
 
 ## Dependencies / consumers
-Consumes nothing. Consumed by **every** other module. The `${ref}` resolver must resolve against the **workspace** service graph (provided by `internal/workspace`), not a single project — inject a resolver interface.
+Consumes nothing. Consumed by **every** other module. The `${ref}` resolver must resolve against the **workspace** service graph (provided by `internal/workspace`), not a single project — inject a resolver interface. Several sibling specs **extend this schema**: `healthcheck`/`dependsOn` ([spec 10](10-health-readiness-and-ordering.md)), the `hooks:` block ([spec 11](11-lifecycle-hooks.md)), service slices `groups`/`defaultProfile` + per-service Compose `profiles:`/`memoryMB` ([spec 12](12-service-profiles-and-selective-up.md)), and the `apiVersion` unknown-key forward-compat policy ([spec 14](14-self-update-and-migration.md)).
 
 ## Open questions
 [Q-GEN](../OPEN-QUESTIONS.md) (committed vs gitignored artifacts affects what config drives), [Q-MIGRATE](../OPEN-QUESTIONS.md) (`devstack import` from devdock `project.yaml`).
