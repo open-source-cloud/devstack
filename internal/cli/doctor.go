@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-source-cloud/devdock-go/internal/docker"
-	"github.com/open-source-cloud/devdock-go/internal/state"
-	"github.com/open-source-cloud/devdock-go/internal/xdg"
+	"github.com/open-source-cloud/devstack/internal/docker"
+	"github.com/open-source-cloud/devstack/internal/state"
+	"github.com/open-source-cloud/devstack/internal/xdg"
 )
 
 func newDoctorCmd(g *GlobalOpts) *cobra.Command {

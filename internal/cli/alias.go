@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-source-cloud/devdock-go/internal/alias"
+	"github.com/open-source-cloud/devstack/internal/alias"
 )
 
 func newAliasCmd(g *GlobalOpts) *cobra.Command {

@@ -13,8 +13,8 @@ import (
 	fang "charm.land/fang/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/open-source-cloud/devdock-go/internal/alias"
-	"github.com/open-source-cloud/devdock-go/internal/version"
+	"github.com/open-source-cloud/devstack/internal/alias"
+	"github.com/open-source-cloud/devstack/internal/version"
 )
 
 // GlobalOpts holds the global flags every command renders through.

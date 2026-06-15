@@ -1,8 +1,9 @@
-# devstack developer tasks. The binary is named `devstack` (from ./cmd/devstack)
-# regardless of the repo folder name.
+# devstack developer tasks. The binary is `devstack` (built from ./cmd/devstack);
+# the Go module is github.com/open-source-cloud/devstack. `make install` drops the
+# binary into a local bin dir; `make smoke` exercises the built binary end-to-end.
 
 BINARY      := devstack
-PKG         := github.com/open-source-cloud/devdock-go
+PKG         := github.com/open-source-cloud/devstack
 VERSION_PKG := $(PKG)/internal/version
 VERSION     := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -12,9 +13,15 @@ LDFLAGS     := -s -w \
 	-X $(VERSION_PKG).Commit=$(COMMIT) \
 	-X $(VERSION_PKG).Date=$(DATE)
 
+# Where `make install` puts the binary: $XDG_BIN_HOME if set, else $(PREFIX)/bin
+# (~/.local/bin — the same place `devstack alias add` installs symlinks).
+# Override: make install PREFIX=/usr/local   or   make install BINDIR=/somewhere/bin
+PREFIX      ?= $(HOME)/.local
+BINDIR      ?= $(or $(XDG_BIN_HOME),$(PREFIX)/bin)
+
 # The release binary MUST be CGO-free (static), but `go test -race` REQUIRES cgo.
 # So CGO is set per-target, never globally.
-.PHONY: build run test test-race test-one vet fmt fmt-check lint tidy vuln clean snapshot ci help
+.PHONY: build run test test-race test-one vet fmt fmt-check lint tidy vuln clean snapshot ci install uninstall smoke help
 
 build: ## Build the static binary into ./dist
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/$(BINARY) ./cmd/devstack
@@ -51,6 +58,42 @@ snapshot: ## Local goreleaser snapshot build (no publish)
 	go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
 
 ci: fmt-check vet build test-race ## What CI runs
+
+install: build ## Install the binary into $(BINDIR) (override with PREFIX= or XDG_BIN_HOME=)
+	@install -d "$(BINDIR)"
+	@install -m 0755 dist/$(BINARY) "$(BINDIR)/$(BINARY)"
+	@echo "installed $(BINDIR)/$(BINARY) ($(VERSION))"
+	@case ":$$PATH:" in *":$(BINDIR):"*) ;; *) echo "note: $(BINDIR) is not on your PATH — add it to use \`$(BINARY)\` directly";; esac
+
+uninstall: ## Remove the installed binary from $(BINDIR)
+	@rm -f "$(BINDIR)/$(BINARY)" && echo "removed $(BINDIR)/$(BINARY)"
+
+smoke: build ## Exercise the built binary end-to-end in an isolated XDG sandbox
+	@set -eu; \
+	bin="$$PWD/dist/$(BINARY)"; \
+	sandbox="$$(mktemp -d)"; \
+	trap 'rm -rf "$$sandbox"' EXIT; \
+	export XDG_CONFIG_HOME="$$sandbox/config" XDG_DATA_HOME="$$sandbox/data" \
+	       XDG_STATE_HOME="$$sandbox/state" XDG_CACHE_HOME="$$sandbox/cache" \
+	       XDG_BIN_HOME="$$sandbox/bin" XDG_RUNTIME_DIR="$$sandbox/run"; \
+	printf '\n== smoke: %s ==\n' "$$bin"; \
+	echo "-> version is build-stamped"; \
+	"$$bin" version | tee "$$sandbox/version.txt"; \
+	grep -q 'commit' "$$sandbox/version.txt" || { echo "FAIL: unexpected version output"; exit 1; }; \
+	echo "-> --help lists the command surface"; \
+	"$$bin" --help 2>&1 | grep -q 'doctor' || { echo "FAIL: help missing 'doctor'"; exit 1; }; \
+	echo "-> alias add/list/remove round-trip"; \
+	"$$bin" alias add rq >/dev/null; \
+	test -L "$$XDG_BIN_HOME/rq" || { echo "FAIL: alias symlink not created"; exit 1; }; \
+	"$$bin" alias list | grep -qx 'rq' || { echo "FAIL: alias not listed"; exit 1; }; \
+	echo "-> argv[0] dispatch: the symlink runs the identical tree under its own name"; \
+	"$$XDG_BIN_HOME/rq" version >/dev/null || { echo "FAIL: symlinked alias does not dispatch"; exit 1; }; \
+	"$$bin" alias remove rq >/dev/null; \
+	! test -e "$$XDG_BIN_HOME/rq" || { echo "FAIL: alias symlink not removed"; exit 1; }; \
+	echo "-> doctor --json emits the checks contract (a down daemon is OK here)"; \
+	"$$bin" doctor --json >"$$sandbox/doctor.json" 2>/dev/null || true; \
+	grep -q '"checks"' "$$sandbox/doctor.json" || { echo "FAIL: doctor --json missing \"checks\""; exit 1; }; \
+	printf '\n\033[32mok\033[0m  smoke passed\n'
 
 clean:
 	rm -rf dist

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/open-source-cloud/devdock-go/internal/xdg"
+	"github.com/open-source-cloud/devstack/internal/xdg"
 )
 
 // hermeticHome isolates XDG_BIN_HOME/XDG_CONFIG_HOME to temp dirs for a test.

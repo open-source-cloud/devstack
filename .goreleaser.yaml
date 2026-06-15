@@ -20,9 +20,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/open-source-cloud/devdock-go/internal/version.Version={{.Version}}
-      - -X github.com/open-source-cloud/devdock-go/internal/version.Commit={{.ShortCommit}}
-      - -X github.com/open-source-cloud/devdock-go/internal/version.Date={{.Date}}
+      - -X github.com/open-source-cloud/devstack/internal/version.Version={{.Version}}
+      - -X github.com/open-source-cloud/devstack/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/open-source-cloud/devstack/internal/version.Date={{.Date}}
 
 archives:
   - id: default

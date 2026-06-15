@@ -19,7 +19,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/open-source-cloud/devdock-go/internal/xdg"
+	"github.com/open-source-cloud/devstack/internal/xdg"
 )
 
 // Canonical is the tool's primary name; always valid regardless of the registry.

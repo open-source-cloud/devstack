@@ -7,7 +7,7 @@ import "fmt"
 
 // These are overwritten at build time with:
 //
-//	-ldflags "-X github.com/open-source-cloud/devdock-go/internal/version.Version=...
+//	-ldflags "-X github.com/open-source-cloud/devstack/internal/version.Version=...
 //	          -X ....Commit=... -X ....Date=..."
 var (
 	Version = "dev"

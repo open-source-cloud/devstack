@@ -8,8 +8,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/open-source-cloud/devdock-go/internal/alias"
-	"github.com/open-source-cloud/devdock-go/internal/cli"
+	"github.com/open-source-cloud/devstack/internal/alias"
+	"github.com/open-source-cloud/devstack/internal/cli"
 )
 
 func main() {

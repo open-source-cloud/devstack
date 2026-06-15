@@ -1,4 +1,4 @@
-module github.com/open-source-cloud/devdock-go
+module github.com/open-source-cloud/devstack
 
 // Go 1.25 toolchain floor — the max required by fang, validator/v10 (1.25),
 // compose-go (1.24), infisical-sdk (1.24). Enforced project-wide and in CI.

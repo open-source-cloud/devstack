@@ -20,8 +20,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/open-source-cloud/devdock-go/internal/lock"
-	"github.com/open-source-cloud/devdock-go/internal/xdg"
+	"github.com/open-source-cloud/devstack/internal/lock"
+	"github.com/open-source-cloud/devstack/internal/xdg"
 )
 
 // DefaultContext is used when no Docker context can be resolved.
