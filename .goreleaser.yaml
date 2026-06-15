@@ -1,0 +1,54 @@
+# goreleaser config (DECISIONS D13, spec 07). Cross-compiles the single static
+# CGO-free binary for the 4 targets from one Linux runner.
+version: 2
+
+project_name: devstack
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: devstack
+    main: ./cmd/devstack
+    binary: devstack
+    env:
+      - CGO_ENABLED=0 # hard requirement: pure-Go static binary
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/open-source-cloud/devdock-go/internal/version.Version={{.Version}}
+      - -X github.com/open-source-cloud/devdock-go/internal/version.Commit={{.ShortCommit}}
+      - -X github.com/open-source-cloud/devdock-go/internal/version.Date={{.Date}}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# cosign/minisign signing is deferred to post-v1 (DECISIONS D13).
+
+# Linux packages via nfpm (.deb/.rpm). Homebrew tap added once the repo/org is
+# confirmed (Q-NAME).
+nfpms:
+  - id: packages
+    package_name: devstack
+    formats: [deb, rpm]
+    maintainer: "Gustavo Bertoi"
+    description: "Docker-based dev environments with infrastructure shared across projects"
+    license: "TBD"
+    bindir: /usr/bin
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev-{{ .ShortCommit }}"
+
+changelog:
+  use: github
+  sort: asc
