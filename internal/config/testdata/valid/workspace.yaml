@@ -1,0 +1,12 @@
+apiVersion: devstack/v1
+kind: Workspace
+name: acme
+aliases: [rq, uranus]
+profiles: { default: dev }
+shared:
+  postgres: { template: postgres, params: { version: "16" } }
+  redis:    { template: redis,    params: { version: "7" } }
+  minio:    { template: minio }
+projects:
+  - { name: api, path: services/api }
+  - { name: web, path: services/web }

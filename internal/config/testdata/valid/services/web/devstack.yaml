@@ -1,0 +1,12 @@
+apiVersion: devstack/v1
+kind: Project
+name: web
+services:
+  web:
+    template: node.vite
+    profiles: [frontend, core]
+    uses:
+      - workspace.shared.postgres
+    env:
+      import:
+        - { from: workspace.api.api, vars: [host] }
