@@ -51,7 +51,7 @@ Your friend's existing devdock users are the most likely early adopters. A `devs
 - **Your answer:** _______
 
 ### Q-NAME · canonical tool name + alias set — **RESOLVED**
-Canonical name **`devstack`** (matches `devstack.yaml` / `apiVersion: devstack/v1`), built from `./cmd/devstack`. The Go module + GitHub repo are **`github.com/open-source-cloud/devstack`** (the local checkout folder is still `devdock-go`). Aliases **`rq`** and **`uranus`** dispatch via `argv[0]` symlinks.
+Canonical name **`devstack`** (matches `devstack.yaml` / `apiVersion: devstack/v1`), built from `./cmd/devstack`. The Go module + GitHub repo are **`github.com/open-source-cloud/devstack`** (the local checkout folder is `devstack`). Aliases **`rq`** and **`uranus`** dispatch via `argv[0]` symlinks.
 - **Decision:** binary/package name `devstack`; aliases `rq`, `uranus`. Load-bearing for the install-method detection + upgrade-remediation strings in [spec 14](specs/14-self-update-and-migration.md) (Homebrew formula / `.deb`/`.rpm` package name = `devstack`) and the alias-relink step in [spec 13](specs/13-doctor-diagnostics-and-teardown.md)/[spec 14](specs/14-self-update-and-migration.md). The OpenStack DevStack name collision is accepted for now; revisit only if a public distribution-name conflict arises.
 
 ---

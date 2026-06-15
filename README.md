@@ -1,6 +1,6 @@
 # devstack
 
-> The binary is **`devstack`** (Go module + GitHub repo `github.com/open-source-cloud/devstack`; the local checkout folder is `devdock-go`). The same binary is invocable under aliases (e.g. `rq`, `uranus`) via the [alias system](docs/specs/07-cli-and-aliasing.md). Config files are `workspace.yaml` + `devstack.yaml` (`apiVersion: devstack/v1`).
+> The binary is **`devstack`** (Go module + GitHub repo `github.com/open-source-cloud/devstack`; the local checkout folder is `devstack`). The same binary is invocable under aliases (e.g. `rq`, `uranus`) via the [alias system](docs/specs/07-cli-and-aliasing.md). Config files are `workspace.yaml` + `devstack.yaml` (`apiVersion: devstack/v1`).
 
 A single-binary CLI that manages Docker-based development environments and **shares infrastructure across projects** — one warm Postgres / Redis / MinIO for many repos instead of a duplicate stack per project. It is a clean-slate, Go reimplementation of the ideas behind [`devdock`](../devdock) (the Python predecessor), redesigned around a *workspace* of shared services that independent project stacks attach to.
 

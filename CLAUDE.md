@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 environments and **shares infrastructure across projects** — one warm
 Postgres/Redis/MinIO on a tool-owned network for many repos, instead of a
 duplicate stack per repo. The Go module and GitHub repo are
-`github.com/open-source-cloud/devstack` (local checkout folder `devdock-go`); the binary built from `./cmd/devstack`
+`github.com/open-source-cloud/devstack` (local checkout folder `devstack`); the binary built from `./cmd/devstack`
 is `devstack`. The same binary is invocable under aliases (`rq`, `uranus`) via
 `argv[0]` dispatch.
 
