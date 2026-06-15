@@ -13,7 +13,7 @@ The command surface, the multi-alias mechanism (one binary invocable as `rq`, `u
 - **Completions:** cobra's engine via fang's `completion`; register `ValidArgsFunction` on `shell <container>`, `docker exec <container>`, `ws git … <name>` so completions resolve live service/project names from the parsed config.
 - **State/XDG:** `github.com/adrg/xdg` for `ConfigHome`/`DataHome`/`StateHome`/`CacheHome` `/<tool>`. Global shared-service registry here; per-project config committed in the repo. Template cache needs a GC/TTL (grows unbounded). WSL2: refuse `/mnt/*` working dirs; keep state on the Linux side.
 - **Layout:** `/cmd/<tool>/main.go` (thin: alias dispatch + `fang.Execute` + ldflags version), `/internal/*` (all impl), `/pkg/pluginsdk` (reserved, v2), `/templates` (`go:embed`).
-- **Global flags & contract:** `--json` / `--quiet` / `--debug` / `--verbose`, unified error rendering, structured logging via `log/slog`; `--debug` logs every external command run (docker/git/sql/platform-CLI). Define the machine-readable `--json` output contract for `up`/`status`/`doctor`.
+- **Global flags & contract:** `--json` / `--quiet` / `--debug` / `--verbose` / `--no-telemetry` (opt-out for the default-OFF telemetry and the update notifier — [spec 20](20-telemetry.md)/[spec 14](14-self-update-and-migration.md)), unified error rendering, structured logging via `log/slog`; `--debug` logs every external command run (docker/git/sql/platform-CLI). Define the machine-readable `--json` output contract for `up`/`status`/`doctor`/`logs`.
 - **Release:** **goreleaser** OSS + GitHub Actions on tag → `darwin/{amd64,arm64}` + `linux/{amd64,arm64}` (CGO_ENABLED=0, one Linux runner), archives + checksums + Homebrew tap + `.deb`/`.rpm` (nfpm) + cosign/minisign-signed checksums (signing deferrable post-v1). Version/commit/date via `-ldflags`.
 - **Self-update:** `github.com/creativeprojects/go-selfupdate` against goreleaser releases; **detect install method (Homebrew Cellar / dpkg ownership) and refuse to self-replace a package-managed binary**; after update, re-point alias symlinks + run the state-DB migration.
 - **Plugins: deferred to v2** — built-in providers compile in-process behind Go interfaces; no `go-plugin`/gRPC in v1. Native Go `plugin` package rejected (OS-limited, version-brittle, panics crash host).
@@ -24,21 +24,28 @@ devstack up [project...] [--profile P]... [--build] [--rebuild] [--no-hooks] [--
 devstack down [project...]               # whole-project teardown; autostop default off
 devstack status                 # multi-repo git + service + ref-graph + last-saga table
 devstack shell <service>
-devstack logs [service...] [-f]
+devstack logs [service...] [-f] [--since D] [--tail N] [--timestamps] [--json]   # spec 16
 devstack doctor [--fix] [--rebuild-state] [--json]
 devstack ws clone|sync|status [all|<name>...]
 devstack shared status|gc|doctor
-devstack db gc                  # reclaim ORPHANED provisioned roles/dbs/buckets (confirm); v2 adds snapshot/restore/reset
+devstack db gc                  # reclaim ORPHANED provisioned roles/dbs/buckets (confirm); v2 adds snapshot/restore/reset/list/pull (spec 15)
 devstack secrets login <provider> | keygen
 devstack trust install|uninstall|status
 devstack dns setup              # opt-in .test
 devstack tunnel login|create|route|up|down
 devstack alias add|remove <name>
-devstack template init|lint|test          # (registry push/pull = v2)
+devstack template init|lint|test          # v2 registry verbs: push|add|update|diff|ls|verify (spec 19)
 devstack import <path/to/devdock/project.yaml> [--dry-run] [--out DIR] [--force]   # optional migrator
 devstack self update [--force]            # refuses on package-managed installs
 devstack workspace destroy [--purge-data] [--yes]   # this workspace's stacks/refs (+ data with --purge-data)
 devstack uninstall [--yes]      # reverse ALL machine-global artifacts (see ARCHITECTURE §7.3)
+
+# Post-1.0 verbs (reserved in the tree now so completions/branding/help stay consistent):
+devstack db snapshot|restore|reset|list|pull        # v2 — per-project data lifecycle (spec 15)
+devstack dashboard                                  # v2 — live TUI cockpit (spec 16)
+devstack ide gen [--target T] [--offline]           # v2 — devcontainer/.code-workspace/launch (spec 17)
+devstack template push|add|update|diff|ls|verify    # v2 — versioned registry (spec 19)
+devstack telemetry enable|disable|status|show|reset # later — opt-in, default OFF (spec 20)
 ```
 
 > Verb **semantics** live in their feature specs: `up`/`down`/`status` + saga flags ([spec 09](09-orchestration-and-onboarding.md)); `--profile` slices ([spec 12](12-service-profiles-and-selective-up.md)); health gating / `--health-timeout` ([spec 10](10-health-readiness-and-ordering.md)); `--no-hooks` ([spec 11](11-lifecycle-hooks.md)); `doctor`/`workspace destroy`/`uninstall`/`db gc` ([spec 13](13-doctor-diagnostics-and-teardown.md)); `self update`/`import` ([spec 14](14-self-update-and-migration.md)).

@@ -49,6 +49,15 @@ A developer working across 8 microservices today runs 8 Postgres containers, 8 R
 13. [Doctor, diagnostics & teardown](docs/specs/13-doctor-diagnostics-and-teardown.md)
 14. [Self-update, notifications & migration](docs/specs/14-self-update-and-migration.md)
 
+**Post-1.0 specs** (v2 / later — the design frontier beyond the four pillars):
+15. [DB seed, snapshot & restore for shared services](docs/specs/15-db-snapshot-restore.md) — v2
+16. [Log aggregation & live TUI dashboard](docs/specs/16-logs-and-dashboard.md) — v2
+17. [Devcontainer & IDE integration](docs/specs/17-devcontainer-ide-integration.md) — v2
+18. [Resource limits & multi-arch image strategy](docs/specs/18-resource-limits-and-multi-arch.md) — v2
+19. [Versioned template registry](docs/specs/19-template-registry.md) — v2
+20. [Opt-in anonymous telemetry](docs/specs/20-telemetry.md) — later
+21. [Remote / cloud shared-services backend](docs/specs/21-remote-shared-backend.md) — later (exploratory)
+
 ## Quickstart (target UX — not yet implemented)
 
 ```bash

@@ -38,27 +38,27 @@ Throttled (~daily), opt-out background version check → one-line footer; `self 
 
 ### v2
 
-**7. DB seed / snapshot / restore for shared services · 3w.** (distinct from the v1 `db gc` orphan-reaper in [spec 13](specs/13-doctor-diagnostics-and-teardown.md); this item is the richer `db snapshot/restore/reset` data workflow.)
-`db snapshot [name]` (pg_dump/mongodump/redis RDB) into a content-addressed store; `db restore <name>`; `db reset` (drop+recreate role/db + replay seed). Per-project (using the per-project role isolation) so snapshots never clobber another project. Optional `db pull` from a sanitized remote dump feeds the `firstRun` hook. *Branch-switching and "I broke my local data" are daily pain; uniquely enabled by per-project-DB-on-shared-postgres.*
+**7. DB seed / snapshot / restore for shared services · 3w.** ([spec 15](specs/15-db-snapshot-restore.md)) (distinct from the v1 `db gc` orphan-reaper in [spec 13](specs/13-doctor-diagnostics-and-teardown.md); this item is the richer `db snapshot/restore/reset` data workflow.)
+`db snapshot [name]` (pg_dump / redis RDB / `mc mirror`) into a content-addressed store; `db restore <name>`; `db reset` (drop+recreate role/db + replay seed). Per-project (using the per-project role isolation) so snapshots never clobber another project. Optional `db pull` from a sanitized remote dump feeds the `firstRun` hook. *Branch-switching and "I broke my local data" are daily pain; uniquely enabled by per-project-DB-on-shared-postgres.*
 
-**8. Log aggregation + live TUI dashboard · 4w.**
+**8. Log aggregation + live TUI dashboard · 4w.** ([spec 16](specs/16-logs-and-dashboard.md))
 `dashboard` opens a full-screen view: every shared + project service with state/health/CPU/mem (Docker stats stream), per-project local + tunnel URL, and which projects reference each shared service (the ref ledger made visible). Bottom pane multiplexes/filters logs across services. `logs <svc>… [-f]` is the non-interactive sibling. *The day-to-day cockpit; surfaces the shared-services graph that is the product's core idea.*
 
-**9. Devcontainer / IDE integration · 2w.**
+**9. Devcontainer / IDE integration · 2w.** ([spec 17](specs/17-devcontainer-ide-integration.md))
 `ide gen` emits per-repo `.devcontainer/devcontainer.json` pointing at the generated compose service + shared network, a multi-repo `.code-workspace`, per-language debugger attach configs, and the `# yaml-language-server: $schema=` modeline for config autocomplete. *Meets developers in their editor; mostly generation on the existing engine.*
 
-**10. Resource limits & multi-arch image strategy · 1.5w.**
+**10. Resource limits & multi-arch image strategy · 1.5w.** ([spec 18](specs/18-resource-limits-and-multi-arch.md))
 Per-service CPU/memory limits (compose `deploy.resources`) + a workspace memory budget `doctor`/`up` checks against host RAM (acute on Docker Desktop's fixed VM). Templates declare multi-arch refs; the tool prefers native images and warns on emulated (qemu) ones. *Apple Silicon emulation and unbounded shared services are the two big "why is my machine on fire" complaints.*
 
-**11. Team config sharing via versioned template registry · 2.5w.**
+**11. Team config sharing via versioned template registry · 2.5w.** ([spec 19](specs/19-template-registry.md))
 Turn the OCI/git template sources into a curated workflow: `template push oci://ghcr.io/org/templates:1.4.0`, a pinned `templates:` lockfile (ref+digest) for byte-identical renders, `template diff`/`update`, `template lint`/`test` (golden render), `template init` scaffolding. *How a platform team ships "the way we run services" reproducibly to everyone — turns a personal tool into team infrastructure.*
 
 ### Later
 
-**12. Opt-in anonymous telemetry · 1.5w.**
+**12. Opt-in anonymous telemetry · 1.5w.** ([spec 20](specs/20-telemetry.md))
 Strictly opt-in (explicit first-run prompt, default OFF, one-flag disable, documented payload): command names, anonymized error categories, OS/arch, tool/docker/compose versions — never repo names, paths, secrets, or template contents. Self-hostable OTel endpoint; local `telemetry show`. *Lets a small OSS team learn e.g. "WSL2 trust install fails 30% of the time" without betraying trust.*
 
-**13. Remote / cloud shared-services backend · 8w.**
+**13. Remote / cloud shared-services backend · 8w.** ([spec 21](specs/21-remote-shared-backend.md))
 Generalize the shared stack to run on a remote Docker host (DOCKER_HOST/SSH context) or a team "shared dev cluster" — one warm, seeded Postgres for a whole team, zero local DB containers. The ref-counting, per-project provisioning, and DNS/alias model are backend-agnostic; this swaps *where* containers run. Pairs with the tunnel work. *The ambitious devbox/Codespaces-class frontier — correctly deferred until the local model is rock-solid.*
 
 ---
@@ -73,10 +73,10 @@ Generalize the shared stack to run on a remote Docker host (DOCKER_HOST/SSH cont
 | 4 | Service profiles | 1.5w | v1 (M6) · [spec 12](specs/12-service-profiles-and-selective-up.md) |
 | 5 | Lifecycle hooks | 2w | v1 (M6) · [spec 11](specs/11-lifecycle-hooks.md) |
 | 6 | Self-update + notifications | 1w | v1 (M0/M6) · [spec 14](specs/14-self-update-and-migration.md) |
-| 7 | DB snapshot/restore | 3w | v2 |
-| 8 | Log aggregation + dashboard | 4w | v2 |
-| 9 | Devcontainer/IDE integration | 2w | v2 |
-| 10 | Resource limits + multi-arch | 1.5w | v2 |
-| 11 | Versioned template registry | 2.5w | v2 |
-| 12 | Opt-in telemetry | 1.5w | later |
-| 13 | Remote/cloud shared backend | 8w | later |
+| 7 | DB snapshot/restore | 3w | v2 · [spec 15](specs/15-db-snapshot-restore.md) |
+| 8 | Log aggregation + dashboard | 4w | v2 · [spec 16](specs/16-logs-and-dashboard.md) |
+| 9 | Devcontainer/IDE integration | 2w | v2 · [spec 17](specs/17-devcontainer-ide-integration.md) |
+| 10 | Resource limits + multi-arch | 1.5w | v2 · [spec 18](specs/18-resource-limits-and-multi-arch.md) |
+| 11 | Versioned template registry | 2.5w | v2 · [spec 19](specs/19-template-registry.md) |
+| 12 | Opt-in telemetry | 1.5w | later · [spec 20](specs/20-telemetry.md) |
+| 13 | Remote/cloud shared backend | 8w | later · [spec 21](specs/21-remote-shared-backend.md) |

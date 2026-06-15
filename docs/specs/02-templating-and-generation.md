@@ -18,7 +18,7 @@ Turn service templates + resolved config into deterministic, valid Docker Compos
 - **Two render modes:** `renderText(src, ctx) -> []byte` (passthrough, for Dockerfiles/conf/scripts) and `renderYAML(src, ctx) -> map[string]any` (render → goccy unmarshal) — the latter only for *template* fragments, never the user's config.
 - **Template = a directory** with `template.yaml` (carries `extends:`, `schemaVersion`, typed `params:` with defaults), an optional `build/` tree of file templates, and an optional `post_init.yaml`.
 - **Inheritance at the structured layer**, not via the text engine: resolve the `extends` chain into an ordered list, render each layer with the same params, **deep-merge** in order: `extends` base → leaf `template.yaml` → `post_init.yaml` → project overrides.
-- **Sources** behind a `TemplateSource { Resolve(ref) (fs.FS, error) }` interface: **embedded (`go:embed`)** for built-ins in v1; **git** and **OCI** (`oras-go/v2`) deferred (feature #11).
+- **Sources** behind a `TemplateSource { Resolve(ref) (fs.FS, error) }` interface: **embedded (`go:embed`)** for built-ins in v1; **git** and **OCI** (`oras-go/v2`) deferred to the versioned registry ([spec 19](19-template-registry.md), feature #11).
 - **Change detection:** SHA-256 each build context's full rendered input set → `.devstack/state.json` / the ledger; only changed contexts get `docker compose build --no-cache <svc>`. Improves on devdock's flat `.rebuild` JSON list and is timestamp-independent (WSL2/9p-safe).
 - **Writing:** single `writeIfChanged(path, bytes)` → compare, write only on diff, **atomic** (tmp in same dir + `os.Rename`). Deterministic output (sorted keys, `KeepTrailingNewline`).
 

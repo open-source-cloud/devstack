@@ -81,6 +81,56 @@ Should `doctor --fix` ever offer an *interactive* (non-`--yes`) tier for borderl
 - **Recommendation:** keep `--fix` strictly non-destructive; route everything else through the named teardown / `shared` verbs.
 - **Your answer:** _______
 
+### Q-SNAP-RETENTION · snapshot retention / prune policy — **affects v2 (feature #7)** (surfaced by [spec 15](specs/15-db-snapshot-restore.md))
+The content-addressed snapshot store grows unbounded without a policy. What is the default retention — keep-last-N per `(project,kind)`, a max-age, or a total-store-size budget — and should `db snapshot` auto-prune, or should pruning be an explicit `db gc --snapshots` only?
+- **Recommendation:** explicit `db gc --snapshots` only by default (never silently delete a developer's data); offer an opt-in keep-last-N per `(project,kind)` once the workflow is in real use.
+- **Your answer:** _______
+
+### Q-SANITIZE-ENGINE · `db pull` sanitization mechanism — **affects v2 (feature #7)** (surfaced by [spec 15](specs/15-db-snapshot-restore.md))
+Production-derived `db pull` dumps must be scrubbed before they land on disk. Is the sanitization transform a **built-in declarative `sanitize:` profile** (NULL/mask/hash/drop), a **shell-out to an external anonymizer**, or **both behind one interface** — given the single-static-binary constraint?
+- **Recommendation:** built-in declarative `sanitize:` profile for the common PII/token/payment cases (keeps the static-binary promise); an external-anonymizer seam behind the same interface as a later escape hatch.
+- **Your answer:** _______
+
+### Q-DASH-STATS · dashboard CPU/mem default on vs opt-in — **affects v2 (feature #8)** (surfaced by [spec 16](specs/16-logs-and-dashboard.md))
+A `ContainerStats` stream per container is heavy and VM-skewed on Docker Desktop/WSL2. Should CPU/mem default **on** in the dashboard (richer cockpit) or be **opt-in** behind `--stats` (cheaper, accurate-by-omission)?
+- **Recommendation:** on for `dashboard` with `--no-stats` to disable; off for `logs` (it never needs stats).
+- **Your answer:** _______
+
+### Q-IDE-DEBUGPORTS · debug-port allocation lifetime — **affects v2 (feature #9)** (surfaced by [spec 17](specs/17-devcontainer-ide-integration.md))
+Should `debug: true` allocate a **persistent** published host port (stable across `up`, so a committed `launch.json` stays valid — but consumes the registry + a host port even when no debugger attaches) or an **ephemeral** port requested only by `ide gen`/an explicit `--debug` `up` (frees ports but the attach value can drift between runs)?
+- **Recommendation:** persistent per-`(project,service)` debug port in the ledger, gated behind `debug: true`; confirm against the port-budget concern on low-port hosts.
+- **Your answer:** _______
+
+### Q-RESOURCES · memory-budget hard-fail tier — **affects v2 (feature #10)** (surfaced by [spec 18](specs/18-resource-limits-and-multi-arch.md))
+The budget check warns when the declared sum exceeds the budget. Should `up` ever **hard-fail** above a *second*, higher threshold (e.g. declared sum > VM ceiling, guaranteeing OOM), or stay warn-only forever?
+- **Recommendation:** warn-only in v2 (a dev may know their services won't all peak at once); revisit a `--strict-budget` opt-in only if OOM-during-`up` becomes a common support ticket.
+- **Your answer:** _______
+
+### Q-REGISTRY · single- vs multi-template bundles — **affects v2 (feature #11)** (surfaced by [spec 19](specs/19-template-registry.md))
+Does `template push` support **multi-template bundles** (one artifact carrying a whole `php.*`/`node.*` family addressed by sub-path) or strictly **one template per tag**? Multi-template eases atomic team releases and shared `extends:` bases but complicates per-template digest pinning and partial cache GC.
+- **Recommendation:** one artifact per template family with sub-path refs (`oci://…/templates:1.4.0//php.laravel`), pinned by the family digest. Record before wiring `push`.
+- **Your answer:** _______
+
+### Q-SIGN-TRUST · cosign keyless vs keyed default — **affects v2 (feature #11)** (surfaced by [spec 19](specs/19-template-registry.md))
+Is cosign **keyless** (Fulcio/Rekor; requires reaching the public transparency log to verify) acceptable as the default for OSS teams, or must the default be **keyed** (a team-distributed public key, fully offline-verifiable)? Trades zero-key-management for an online verification dependency (relates to the offline-first posture in [Q-DAEMON](#q-daemon--cli-only-vs-background-agent--blocks-m0)).
+- **Recommendation:** keyed by default for offline determinism; keyless opt-in.
+- **Your answer:** _______
+
+### Q-TELEMETRY · default OTLP endpoint owner + privacy policy — **blocks shipping telemetry (feature #12)** (surfaced by [spec 20](specs/20-telemetry.md))
+Where does the *default* OTLP endpoint live, who operates it, and what is its data-retention + source-IP-dropping policy? This must be answered and published before telemetry ships — the default endpoint is the project's standing privacy promise.
+- **Recommendation:** if no project-operated collector exists at ship time, default the endpoint to **empty** (telemetry can be enabled but goes nowhere until a self-hoster sets `telemetry.endpoint`).
+- **Your answer:** _______
+
+### Q-REMOTE-LOCK · distributed lock + ledger authority — **affects later (feature #13)** (surfaced by [spec 21](specs/21-remote-shared-backend.md))
+A local `gofrs/flock` cannot serialize two machines against one remote backend. What is the `DistLock` + ledger-authority strategy: a **Postgres advisory lock** with the cluster DB as the source of truth, a **dedicated coordinator daemon** (reintroduces a daemon — [Q-DAEMON](#q-daemon--cli-only-vs-background-agent--blocks-m0)), or an **external lease store**? Local SQLite degrades to a cache regardless.
+- **Recommendation:** start with `pg_advisory_lock` on the shared cluster Postgres (zero new infra, crash-safe, reuses `pgx/v5`); confirm the ledger becomes remote-authoritative with local SQLite as a cache.
+- **Your answer:** _______
+
+### Q-REMOTE-TENANT · tenant identity for per-user isolation — **affects later (feature #13)** (surfaced by [spec 21](specs/21-remote-shared-backend.md))
+On a shared cluster, what identifies a tenant for role/db/bucket naming and `db gc` ownership: the **OS username**, an explicit `--as`/config-declared team identity, or the **cluster-auth identity**? Naming the role after the project is *not* isolation when two developers both have a project `app`.
+- **Recommendation:** an explicit config-declared/`--as` team identity (stable, collision-free, decoupled from local OS accounts); fall back to OS username only as a default seed.
+- **Your answer:** _______
+
 ## Decisions already made (recorded from our conversation)
 - Ambition: **open-source product**.
 - v1 scope: **all four pillars** (with the M0–M3 "core 1.0" phasing recommended in [ROADMAP](ROADMAP.md)).
