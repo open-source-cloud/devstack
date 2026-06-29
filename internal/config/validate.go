@@ -61,7 +61,53 @@ func validateModel(m *Model, ws *source, projSrc map[string]*source) error {
 	if err := validateRefs(m, projSrc); err != nil {
 		return err
 	}
+	if err := validateProfiles(m, ws); err != nil {
+		return err
+	}
 	return detectCycles(m)
+}
+
+// validateProfiles checks the spec-12 service-slice config: every group's
+// services reference a real service, and defaultProfile (if set) names a defined
+// group (or the reserved "all"). Positioned to the workspace file.
+func validateProfiles(m *Model, ws *source) error {
+	services := allServiceNames(m)
+	for _, gname := range sortedKeys(m.Workspace.Groups) {
+		for i, svc := range m.Workspace.Groups[gname].Services {
+			if !services[svc] {
+				return ws.errAt(fmt.Sprintf("$.groups.%s.services[%d]", gname, i),
+					"group %q references unknown service %q%s", gname, svc, suggest(svc, sortedSet(services)))
+			}
+		}
+	}
+	if dp := m.Workspace.DefaultProfile; dp != "" && dp != "all" {
+		if _, ok := m.Workspace.Groups[dp]; !ok {
+			return ws.errAt("$.defaultProfile",
+				"defaultProfile %q is not a defined group%s", dp, suggest(dp, sortedKeys(m.Workspace.Groups)))
+		}
+	}
+	return nil
+}
+
+// allServiceNames is the set of every service name across all projects (group
+// slices reference bare service names, spec 12).
+func allServiceNames(m *Model) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range m.Projects {
+		for sname := range p.Services {
+			out[sname] = true
+		}
+	}
+	return out
+}
+
+func sortedSet(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // formatStructErr renders validator.ValidationErrors as a file-scoped, sorted,

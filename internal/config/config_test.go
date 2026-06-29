@@ -83,6 +83,79 @@ func TestLoadValid(t *testing.T) {
 	if got := len(m.Workspace.Hooks.PreUp); got != 1 || m.Workspace.Hooks.PreUp[0].Name != "banner" {
 		t.Errorf("workspace preUp = %+v, want one 'banner' hook", m.Workspace.Hooks.PreUp)
 	}
+
+	// spec 12/18 — profiles/groups + memory budget hints parse.
+	if m.Workspace.DefaultProfile != "core" {
+		t.Errorf("defaultProfile = %q, want core", m.Workspace.DefaultProfile)
+	}
+	if g, ok := m.Workspace.Groups["frontend"]; !ok || len(g.Services) != 1 || g.MemoryHintMB != 1024 {
+		t.Errorf("group frontend = %+v", m.Workspace.Groups["frontend"])
+	}
+	if m.Workspace.MemoryBudgetMB != 4096 {
+		t.Errorf("memoryBudgetMB = %d, want 4096", m.Workspace.MemoryBudgetMB)
+	}
+	if apiSvc.MemoryMB != 768 {
+		t.Errorf("api.api memoryMB = %d, want 768", apiSvc.MemoryMB)
+	}
+}
+
+func TestGroupUnknownService(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"workspace.yaml": `apiVersion: devstack/v1
+kind: Workspace
+name: acme
+groups:
+  core: { services: [ghost] }
+shared:
+  postgres: { template: postgres }
+projects:
+  - { name: api, path: api }
+`,
+		"api/devstack.yaml": "apiVersion: devstack/v1\nkind: Project\nname: api\nservices:\n  api: { template: t }\n",
+	})
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "ghost") {
+		t.Fatalf("want an unknown-group-service error naming ghost, got %v", err)
+	}
+}
+
+func TestDefaultProfileUnknownGroup(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"workspace.yaml": `apiVersion: devstack/v1
+kind: Workspace
+name: acme
+defaultProfile: nope
+groups:
+  core: { services: [api] }
+shared:
+  postgres: { template: postgres }
+projects:
+  - { name: api, path: api }
+`,
+		"api/devstack.yaml": "apiVersion: devstack/v1\nkind: Project\nname: api\nservices:\n  api: { template: t }\n",
+	})
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "defaultProfile") {
+		t.Fatalf("want a defaultProfile error, got %v", err)
+	}
+}
+
+func TestDefaultProfileAllReserved(t *testing.T) {
+	root := writeTree(t, map[string]string{
+		"workspace.yaml": `apiVersion: devstack/v1
+kind: Workspace
+name: acme
+defaultProfile: all
+shared:
+  postgres: { template: postgres }
+projects:
+  - { name: api, path: api }
+`,
+		"api/devstack.yaml": "apiVersion: devstack/v1\nkind: Project\nname: api\nservices:\n  api: { template: t }\n",
+	})
+	if _, err := LoadAt(root); err != nil {
+		t.Fatalf("defaultProfile: all is reserved and valid without a group, got %v", err)
+	}
 }
 
 // projectWith wraps a services: block in the valid workspace+project envelope.
