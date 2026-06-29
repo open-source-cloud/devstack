@@ -56,11 +56,30 @@ type UpDeps struct {
 	// Trust installs the local CA when network.proxy.httpsLocal; nil → trust.New().
 	// Injected for tests (the trust phase is fenced — failure never aborts up).
 	Trust *trust.Trust
+	// PgConnect opens an admin Postgres connection for the provision phase; nil →
+	// the pgx-backed default. Injected for tests (so provisioning runs daemon-free).
+	PgConnect PgConnector
 
 	Build         bool          // compose up --build
 	NoHooks       bool          // skip the hooks phase
 	NoPreflight   bool          // skip the preflight phase (fast inner loops)
+	NoProvision   bool          // skip the per-project Postgres provision phase
 	HealthTimeout time.Duration // per-shared-service gate cap (0 → health.Compile default)
+}
+
+// intersect returns the elements of a that are also in b, preserving a's order.
+func intersect(a, b []string) []string {
+	set := make(map[string]bool, len(b))
+	for _, x := range b {
+		set[x] = true
+	}
+	var out []string
+	for _, x := range a {
+		if set[x] {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 // BuildUp assembles the ordered up-saga phases for the requested projects.
@@ -105,13 +124,26 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 	if !d.NoPreflight {
 		phases = append(phases, preflightPhase(d))
 	}
+	// Provision targets: active projects that `uses` a shared Postgres get a
+	// per-project role+db (DECISIONS D8). The instances they need are published on
+	// 127.0.0.1 by the shared phase so host-side pgx can reach them.
+	var targets []provTarget
+	var provInstances []string
+	if !d.NoProvision {
+		targets = provTargets(d.Model, active.Services, pgInstances(d.Model))
+		provInstances = provInstanceList(targets)
+	}
+
 	phases = append(phases,
 		networkPhase(d),
 		generatePhase(d, gen),
 		secretsPhase(d, projects, secretEnv),
 		trustPhase(d),
-		sharedPhase(d, projects, active.Shared),
+		sharedPhase(d, projects, active.Shared, provInstances),
 	)
+	if len(targets) > 0 {
+		phases = append(phases, provisionPhase(d, targets))
+	}
 	// Hook ordering (spec 11): workspace preUp → per-project (preUp → compose-up →
 	// postUp) → workspace postUp.
 	if !d.NoHooks {
@@ -293,12 +325,16 @@ func generatePhase(d UpDeps, gen *generate.Generator) Phase {
 
 // shared — register ref rows, bring up only the shared services the requested
 // projects use, then health-gate them. Compensation drops the ref rows.
-func sharedPhase(d UpDeps, projects, names []string) Phase {
+func sharedPhase(d UpDeps, projects, names, provInstances []string) Phase {
+	// Only provision instances that are actually being brought up this run.
+	prov := intersect(provInstances, names)
 	return Phase{
 		Name:     "shared",
 		Mutating: true,
 		Fingerprint: func(context.Context) (string, error) {
-			return Fingerprint(append([]string{"shared"}, names...)...), nil
+			// Fold the provisioned set in: newly publishing a port (a consumer was
+			// added) must re-run shared-up rather than skip on a stale fingerprint.
+			return Fingerprint(append(append([]string{"shared"}, names...), append([]string{"prov"}, prov...)...)...), nil
 		},
 		Run: func(ctx context.Context) (any, error) {
 			if len(names) == 0 {
@@ -314,6 +350,24 @@ func sharedPhase(d UpDeps, projects, names []string) Phase {
 				Project: generate.SharedStackName,
 				File:    filepath.Join(outDir, generate.ComposeFile),
 				Dir:     outDir, Runner: d.Runner,
+			}
+			// Publish each provisioned Postgres on 127.0.0.1:<ledger port> via an
+			// up-time overlay so host-side pgx (the provision phase) can reach it,
+			// without touching the deterministic generated compose.
+			if len(prov) > 0 {
+				ports := map[string]int{}
+				for _, inst := range prov {
+					port, err := d.Manager.FreeHostPort(ctx, generate.SharedAlias(inst), provisionPurpose, provisionPortBase)
+					if err != nil {
+						return nil, fmt.Errorf("allocate provision port for %s: %w", inst, err)
+					}
+					ports[inst] = port
+				}
+				overlay, err := writeProvisionOverlay(d.Model.Root, ports)
+				if err != nil {
+					return nil, err
+				}
+				cp.Overrides = []string{overlay}
 			}
 			if err := cp.Up(ctx, names...); err != nil {
 				return nil, fmt.Errorf("compose up shared: %w", err)

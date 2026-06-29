@@ -29,6 +29,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 		build       bool
 		noHooks     bool
 		noPreflight bool
+		noProvision bool
 		profiles    []string
 	)
 	cmd := &cobra.Command{
@@ -48,6 +49,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 			d.Build = build
 			d.NoHooks = noHooks
 			d.NoPreflight = noPreflight
+			d.NoProvision = noProvision
 			d.Profiles = profiles
 
 			// Memory-budget warning (spec 12 §budget): opt-in — only when the
@@ -90,6 +92,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 	cmd.Flags().BoolVar(&build, "build", false, "build images before starting (compose build)")
 	cmd.Flags().BoolVar(&noHooks, "no-hooks", false, "skip lifecycle hooks")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, "skip the preflight checks")
+	cmd.Flags().BoolVar(&noProvision, "no-provision", false, "skip per-project Postgres role/db provisioning")
 	cmd.Flags().StringArrayVarP(&profiles, "profile", "p", nil,
 		"service slice(s) to start — repeatable & comma-separated (spec 12); empty → defaultProfile or all")
 	return cmd
