@@ -44,11 +44,26 @@ func TestWithTokenShim(t *testing.T) {
 		t.Errorf("token file perms = %v, want 0600", perm)
 	}
 
+	// The token handle disables inherited credential persistence so a successful
+	// clone never writes the token to ~/.git-credentials (the `store` helper).
+	if !containsPair(tg.configArgs, "-c", "credential.helper=") {
+		t.Errorf("token handle should reset credential.helper, got configArgs=%v", tg.configArgs)
+	}
+
 	// cleanup removes the whole shim dir.
 	cleanup()
 	if _, err := os.Stat(askpass); !os.IsNotExist(err) {
 		t.Error("cleanup should remove the shim")
 	}
+}
+
+func containsPair(s []string, a, b string) bool {
+	for i := 0; i+1 < len(s); i++ {
+		if s[i] == a && s[i+1] == b {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWithTokenEmptyIsNoop(t *testing.T) {

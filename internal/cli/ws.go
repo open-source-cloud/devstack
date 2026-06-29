@@ -193,7 +193,8 @@ func branchLabel(s *git.Status) string {
 }
 
 func abLabel(s *git.Status) string {
-	if s.Upstream == "" {
+	// No upstream, or the upstream was deleted: ahead/behind is unknown.
+	if s.Upstream == "" || s.UpstreamGone {
 		return "-"
 	}
 	return fmt.Sprintf("+%d/-%d", s.Ahead, s.Behind)
@@ -202,6 +203,10 @@ func abLabel(s *git.Status) string {
 func stateLabel(s *git.Status) string {
 	if !s.Dirty() {
 		return "clean"
+	}
+	if s.Conflicts > 0 {
+		return fmt.Sprintf("dirty (%d staged, %d unstaged, %d untracked, %d conflicts)",
+			s.Staged, s.Unstaged, s.Untracked, s.Conflicts)
 	}
 	return fmt.Sprintf("dirty (%d staged, %d unstaged, %d untracked)", s.Staged, s.Unstaged, s.Untracked)
 }
@@ -230,11 +235,17 @@ func newWsCloneCmd(g *GlobalOpts) *cobra.Command {
 					return fmt.Errorf("no git URL declared")
 				}
 				if gx.IsRepo(ctx, r.dir) {
-					// Idempotent: validate the remote matches the expected URL.
-					if cur, err := gx.RemoteURL(ctx, r.dir); err == nil && cur != r.url {
+					// Idempotent: validate the remote matches (tolerating
+					// ssh/https/shorthand equivalence). A failure to read origin is
+					// a per-repo error, not a silent pass.
+					cur, err := gx.RemoteURL(ctx, r.dir)
+					if err != nil {
+						return fmt.Errorf("exists but cannot read its origin remote: %w", err)
+					}
+					if !git.SameRemote(cur, r.url) {
 						return fmt.Errorf("exists but origin is %q, expected %q", cur, r.url)
 					}
-					return nil // already cloned
+					return nil // already cloned, correct remote
 				}
 				return gx.Clone(ctx, r.url, r.dir, git.CloneOptions{})
 			})
@@ -285,13 +296,19 @@ func newWsSyncCmd(g *GlobalOpts) *cobra.Command {
 func newWsGitCmd(g *GlobalOpts) *cobra.Command {
 	var jobs int
 	cmd := &cobra.Command{
-		Use:   "git -- <git args...>",
-		Short: "Run an arbitrary git command across every repo",
+		Use:   "git <git args...> [-- names...]",
+		Short: "Run an arbitrary git command across repos (subset after --)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return fmt.Errorf("usage: ws git -- <git args...>")
+			// Grammar: `ws git <git args...> -- [all|name...]`. Everything before
+			// the -- is the git command; names after it select a repo subset.
+			gitArgs, names := args, []string(nil)
+			if dash := cmd.ArgsLenAtDash(); dash >= 0 {
+				gitArgs, names = args[:dash], args[dash:]
 			}
-			repos, err := loadRepos(nil)
+			if len(gitArgs) == 0 {
+				return fmt.Errorf("usage: %s ws git <git args...> [-- names...]", rootName(cmd))
+			}
+			repos, err := loadRepos(names)
 			if err != nil {
 				return err
 			}
@@ -306,7 +323,7 @@ func newWsGitCmd(g *GlobalOpts) *cobra.Command {
 				if !gx.IsRepo(ctx, r.dir) {
 					return fmt.Errorf("not cloned")
 				}
-				return gx.Run(ctx, r.dir, args...)
+				return gx.Run(ctx, r.dir, gitArgs...)
 			})
 			return reportResults(cmd, g, "git", results)
 		},

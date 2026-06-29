@@ -26,7 +26,7 @@ func ExpandURL(spec string) string {
 	}
 	// Explicit passthrough.
 	if rest, ok := strings.CutPrefix(spec, "repo:"); ok {
-		return rest
+		return strings.TrimSpace(rest)
 	}
 	// Already a full URL or scp-like remote or a path.
 	if looksLikeURL(spec) {
@@ -34,11 +34,53 @@ func ExpandURL(spec string) string {
 	}
 	if scheme, rest, ok := strings.Cut(spec, ":"); ok {
 		if host, known := knownHosts[scheme]; known {
-			path := strings.TrimSuffix(rest, ".git")
+			path := strings.TrimSuffix(strings.TrimSpace(rest), ".git")
 			return "git@" + host + ":" + path + ".git"
 		}
 	}
 	return spec
+}
+
+// SameRemote reports whether two git remote specs point at the same repository,
+// tolerating ssh/https/scp/shorthand differences (e.g. git@github.com:a/b.git
+// and https://github.com/a/b are the same). Used by `ws clone` so an existing
+// clone reached via a different transport is not flagged as a URL mismatch.
+func SameRemote(a, b string) bool {
+	ah, ap := canonicalRemote(a)
+	bh, bp := canonicalRemote(b)
+	return ah == bh && ap == bp
+}
+
+// canonicalRemote reduces a remote spec to a (host, path) identity. A purely
+// local path has an empty host and its cleaned path.
+func canonicalRemote(s string) (host, path string) {
+	s = ExpandURL(strings.TrimSpace(s))
+	switch {
+	case strings.Contains(s, "://"):
+		s = s[strings.Index(s, "://")+3:]
+		if at := strings.IndexByte(s, '@'); at >= 0 {
+			if slash := strings.IndexByte(s, '/'); slash < 0 || at < slash {
+				s = s[at+1:]
+			}
+		}
+		host, path, _ = strings.Cut(s, "/")
+		host, _, _ = strings.Cut(host, ":") // drop :port
+	case strings.HasPrefix(s, "/"), strings.HasPrefix(s, "."), strings.HasPrefix(s, "~"):
+		return "", strings.TrimSuffix(s, ".git") // local path
+	default:
+		// scp-style git@host:path
+		if at := strings.IndexByte(s, '@'); at >= 0 {
+			s = s[at+1:]
+		}
+		if h, p, ok := strings.Cut(s, ":"); ok {
+			host, path = h, p
+		} else {
+			return "", strings.TrimSuffix(s, ".git")
+		}
+	}
+	host = strings.ToLower(host)
+	path = strings.TrimSuffix(strings.TrimPrefix(path, "/"), ".git")
+	return host, path
 }
 
 // looksLikeURL reports whether spec is already a transport URL, an scp-style

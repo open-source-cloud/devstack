@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
 
 // MinVersion is the git floor (spec 06). 2.30 is conservative (porcelain=v2
@@ -25,6 +27,9 @@ var MinVersion = Version{2, 30}
 type Git struct {
 	bin string
 	env []string
+	// configArgs are `-c key=val` pairs prepended to every invocation (used by
+	// WithToken to disable inherited credential persistence).
+	configArgs []string
 }
 
 // Version is a major.minor pair for the git floor check.
@@ -58,19 +63,45 @@ func New() (*Git, error) {
 }
 
 // hardenedEnv augments the process env so git never blocks on an interactive
-// prompt and always emits stable, parseable output (spec 06).
+// prompt and always emits stable, parseable output (spec 06). GIT_TERMINAL_PROMPT
+// and GCM_INTERACTIVE cover git's own prompts and Git Credential Manager (the
+// HTTPS path); for the SSH path, BatchMode is added when NO terminal is attached
+// so an unknown host key or a passphrase-protected key with no agent fails fast
+// per-repo instead of hanging the parallel batch — while still honoring
+// ~/.ssh/config (IdentityFile, Host aliases, ProxyJump) and known_hosts. When a
+// TTY IS attached, interactive passphrase/host-key entry is left intact, and a
+// pre-existing GIT_SSH_COMMAND is always respected.
 func hardenedEnv(base []string) []string {
-	return append(base,
+	env := append(base,
 		"GIT_TERMINAL_PROMPT=0", // never prompt on the terminal
 		"GCM_INTERACTIVE=never", // Git Credential Manager: never pop UI
 		"LC_ALL=C",              // stable, parseable, locale-independent output
 	)
+	if !hasEnv(base, "GIT_SSH_COMMAND") && !term.IsTerminal(int(os.Stderr.Fd())) {
+		env = append(env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=10")
+	}
+	return env
+}
+
+// hasEnv reports whether env already defines key.
+func hasEnv(env []string, key string) bool {
+	prefix := key + "="
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // run executes git in dir (empty = inherit CWD), capturing stdout. A failure is
 // wrapped with the args + captured stderr so it is self-debuggable (§7.6).
 func (g *Git) run(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, g.bin, args...)
+	full := args
+	if len(g.configArgs) > 0 {
+		full = append(append([]string{}, g.configArgs...), args...)
+	}
+	cmd := exec.CommandContext(ctx, g.bin, full...)
 	cmd.Dir = dir
 	cmd.Env = g.env
 	var stdout, stderr strings.Builder
