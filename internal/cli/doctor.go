@@ -40,7 +40,7 @@ func newDoctorCmd(g *GlobalOpts) *cobra.Command {
 			}
 			renderChecks(cmd, checks)
 			if fix {
-				fmt.Fprintln(cmd.OutOrStdout(), "\n(--fix has no automatic remediations wired yet; planned with M6 doctor)")
+				doctorFix(cmd)
 			}
 			for _, c := range checks {
 				if c.Status == docker.StatusFail {
@@ -53,6 +53,28 @@ func newDoctorCmd(g *GlobalOpts) *cobra.Command {
 	cmd.Flags().BoolVar(&fix, "fix", false, "apply safe automatic remediations (M6)")
 	cmd.Flags().BoolVar(&rebuildState, "rebuild-state", false, "reconstruct the ledger from config + live container labels")
 	return cmd
+}
+
+// doctorFix applies the STRICTLY non-destructive remediations (spec 13): the
+// self-healing ledger reconcile (prune ref rows for projects no longer live). It
+// never drops a volume/DB/container — those are explicit-confirmation jobs
+// (`shared gc`, `workspace destroy`). Best-effort: a down daemon or no workspace
+// is reported, not fatal.
+func doctorFix(cmd *cobra.Command) {
+	w := cmd.OutOrStdout()
+	fmt.Fprintln(w, "\n--fix: applying safe remediations…")
+	mgr, closeFn, err := buildManager(cmd)
+	if err != nil {
+		fmt.Fprintf(w, "  reconcile skipped: %v\n", err)
+		return
+	}
+	defer closeFn()
+	pruned, err := mgr.Reconcile(cmd.Context())
+	if err != nil {
+		fmt.Fprintf(w, "  reconcile skipped: %v\n", err)
+		return
+	}
+	fmt.Fprintf(w, "  reconciled the ledger: pruned %d stale ref row(s)\n", len(pruned))
 }
 
 // rebuildLedger reconstructs the shared_service + ref ledger from on-disk config
