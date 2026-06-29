@@ -134,8 +134,19 @@ func runDoctor(cmd *cobra.Command) []docker.Check {
 		})
 	} else {
 		v, _ := db.SchemaVersion()
-		db.Close()
 		checks = append(checks, docker.Check{Name: "state ledger", Status: docker.StatusOK, Detail: fmt.Sprintf("schema v%d @ %s", v, ctxName)})
+		// Shared-service ledger summary (informational): instances + total refs.
+		shared, _ := db.ListSharedServices()
+		totalRefs := 0
+		for _, s := range shared {
+			n, _ := db.RefCount(s.Name)
+			totalRefs += n
+		}
+		db.Close()
+		checks = append(checks, docker.Check{
+			Name: "shared services", Status: docker.StatusOK,
+			Detail: fmt.Sprintf("%d instance(s), %d ref(s)", len(shared), totalRefs),
+		})
 	}
 
 	// DNS entries for *.localhost (spec 05) — best-effort, only when the current
