@@ -28,6 +28,7 @@ type Workspace struct {
 	Profiles       Profiles             `yaml:"profiles"`
 	DefaultProfile string               `yaml:"defaultProfile"` // spec 12 — slice activated by `up` with no --profile
 	Groups         map[string]Group     `yaml:"groups"`         // spec 12 — workspace-level service slices
+	MemoryBudgetMB int                  `yaml:"memoryBudgetMB"` // spec 12/18 — warn when active services' memoryMB sum exceeds this
 	Secrets        Secrets              `yaml:"secrets"`
 	Network        Network              `yaml:"network"`
 	Hooks          Hooks                `yaml:"hooks"` // spec 11 — workspace-scope lifecycle hooks
@@ -113,6 +114,7 @@ type Service struct {
 	Env         Env            `yaml:"env"`
 	Ports       map[string]int `yaml:"ports"`
 	Profiles    []string       `yaml:"profiles"`                  // spec 12 — Compose profile membership tags
+	MemoryMB    int            `yaml:"memoryMB"`                  // spec 12/18 — per-service budget hint (reserved)
 	Healthcheck *Healthcheck   `yaml:"healthcheck"`               // spec 10 — readiness probe (nil = none)
 	DependsOn   []DependsOn    `yaml:"dependsOn" validate:"dive"` // spec 10 — ordering edges
 }

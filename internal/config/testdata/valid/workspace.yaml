@@ -3,6 +3,11 @@ kind: Workspace
 name: acme
 aliases: [rq, uranus]
 profiles: { default: dev }
+defaultProfile: core
+groups:
+  core:     { services: [api] }
+  frontend: { services: [web], memoryHintMB: 1024 }
+memoryBudgetMB: 4096
 hooks:
   preUp:
     - { name: banner, run: host, command: ["true"] }
