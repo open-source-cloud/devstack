@@ -70,6 +70,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newDownCmd(g),
 		newStatusCmd(g),
 		newDnsCmd(g),
+		newTrustCmd(g),
 		newDoctorCmd(g),
 		newConfigCmd(g),
 		newGenerateCmd(g),
