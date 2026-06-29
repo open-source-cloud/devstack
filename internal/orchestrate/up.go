@@ -155,6 +155,7 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		}
 		phases = append(phases, composeUpPhase(d, p, secretEnv, active.Services[p]))
 		if !d.NoHooks {
+			phases = append(phases, firstRunPhase(d, p, d.Model.Projects[p].Hooks.FirstRun))
 			phases = append(phases, hookPhase(d, p, "postUp", d.Model.Projects[p].Hooks.PostUp, hooks.OnAbort))
 		}
 	}
@@ -507,6 +508,47 @@ func hookPhase(d UpDeps, scope, phaseName string, hookList []config.Hook, onFail
 			}
 			results, err := runner.RunPhase(ctx, hookList, hooks.PhaseOpts{
 				Project: ledgerProject, Phase: phaseName, DefaultOnFailure: onFail,
+			})
+			if err != nil {
+				return map[string]any{"results": results}, err
+			}
+			return map[string]any{"ran": len(results)}, nil
+		},
+	}
+}
+
+// firstRunPhase runs a project's `firstRun` hooks exactly once (spec 11): the
+// first time the project comes up (e.g. seed/migrate against the freshly
+// provisioned database). Idempotency is ledger-backed and keyed per hook NAME, so
+// each firstRun hook runs once and is recorded under the flock; a re-`up` skips
+// them. `workspace destroy`/`uninstall` clear the hook_run rows, so a fresh
+// provision re-runs firstRun. It runs AFTER compose-up (the container — and its
+// provisioned DB — exists) and before postUp. Default onFailure is abort: a failed
+// first-time migration should stop the up rather than leave a half-seeded stack.
+func firstRunPhase(d UpDeps, project string, hookList []config.Hook) Phase {
+	return Phase{
+		Name:  "firstRun",
+		Scope: project,
+		Run: func(ctx context.Context) (any, error) {
+			if len(hookList) == 0 {
+				return map[string]any{"ran": 0}, nil
+			}
+			outDir := filepath.Join(d.Model.ProjectDir(project), generate.GenDir)
+			runner := &hooks.Runner{
+				Execer: hooks.OSExecer{
+					BaseDir: d.Model.ProjectDir(project),
+					Project: "devstack-" + project,
+					File:    filepath.Join(outDir, generate.ComposeFile),
+				},
+				Ledger: d.DB,
+				Lock:   func(ctx context.Context, fn func() error) error { return lock.WithLock(ctx, d.LockPath, fn) },
+			}
+			results, err := runner.RunPhase(ctx, hookList, hooks.PhaseOpts{
+				Project:          project,
+				Phase:            "firstRun",
+				Idempotent:       true,
+				ScopeKey:         func(h config.Hook) string { return h.Name },
+				DefaultOnFailure: hooks.OnAbort,
 			})
 			if err != nil {
 				return map[string]any{"results": results}, err
