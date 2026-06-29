@@ -20,8 +20,134 @@ func newSecretsCmd(g *GlobalOpts) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newSecretsKeygenCmd(g),
-		stub("login", "Authenticate a secrets provider (keyring) — S5", "M4"),
+		newSecretsLoginCmd(g),
+		newSecretsLogoutCmd(g),
+		newSecretsStatusCmd(g),
 	)
+	return cmd
+}
+
+// openKeyring builds the credential store: the OS keyring when usable, otherwise
+// an ephemeral in-memory fallback (WSL2 without D-Bus). The bool reports whether
+// the store persists across invocations. It's a package var so tests inject a
+// deterministic store.
+var openKeyring = func() (secrets.Keyring, bool) {
+	k := secrets.OSKeyring{}
+	if secrets.KeyringAvailable(k) {
+		return k, true
+	}
+	return secrets.NewMemKeyring(), false
+}
+
+// newSecretsLoginCmd wires `secrets login <provider>` (spec 04 §S5): store a
+// provider credential in the OS keyring. On a keyring-less host (WSL2 without
+// D-Bus) it degrades with a one-line warning naming the env var to set instead —
+// the tool keeps working in env-var mode.
+func newSecretsLoginCmd(g *GlobalOpts) *cobra.Command {
+	var token string
+	cmd := &cobra.Command{
+		Use:   "login <provider>",
+		Short: "Store a secrets-provider credential in the OS keyring",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			provider := args[0]
+			if token == "" {
+				return fmt.Errorf("provide the credential via --token (avoid shell history: read it from a file or a pipe)")
+			}
+			k, persistent := openKeyring()
+			if !persistent {
+				// Degrade, never fail: tell the user the env-var path and exit 0.
+				msg := fmt.Sprintf("os keyring unavailable (no Secret Service / D-Bus — common on WSL2); not stored.\n"+
+					"set %s in your environment instead.", secrets.CredEnvVar(provider))
+				if g.JSON {
+					return writeJSON(cmd, map[string]any{"provider": provider, "stored": false, "envVar": secrets.CredEnvVar(provider), "warning": msg})
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "[warn]    %s\n", msg)
+				return nil
+			}
+			if err := k.Set(secrets.ProviderCredKey(provider), token); err != nil {
+				return fmt.Errorf("store credential for %q: %w", provider, err)
+			}
+			if g.JSON {
+				return writeJSON(cmd, map[string]any{"provider": provider, "stored": true})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "stored credential for %q in the OS keyring\n", provider)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&token, "token", "", "the credential value (required)")
+	return cmd
+}
+
+// newSecretsLogoutCmd wires `secrets logout <provider>` — remove a stored
+// credential. A no-op (success) when none exists or the keyring is unavailable.
+func newSecretsLogoutCmd(g *GlobalOpts) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "logout <provider>",
+		Short: "Remove a stored secrets-provider credential from the OS keyring",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			provider := args[0]
+			k, persistent := openKeyring()
+			if !persistent {
+				if g.JSON {
+					return writeJSON(cmd, map[string]any{"provider": provider, "removed": false, "reason": "keyring unavailable"})
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "[warn]    os keyring unavailable; nothing to remove\n")
+				return nil
+			}
+			if err := k.Delete(secrets.ProviderCredKey(provider)); err != nil {
+				return fmt.Errorf("remove credential for %q: %w", provider, err)
+			}
+			if g.JSON {
+				return writeJSON(cmd, map[string]any{"provider": provider, "removed": true})
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "removed credential for %q\n", provider)
+			return nil
+		},
+	}
+	return cmd
+}
+
+// newSecretsStatusCmd wires `secrets status` — report keyring availability and,
+// for any providers named as args, whether a credential resolves (env or keyring).
+func newSecretsStatusCmd(g *GlobalOpts) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status [provider...]",
+		Short: "Report keyring availability and per-provider credential source",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			k, persistent := openKeyring()
+			type provStatus struct {
+				Provider string `json:"provider"`
+				Source   string `json:"source"` // env | keyring | none
+			}
+			var provs []provStatus
+			for _, p := range args {
+				src := "none"
+				if os.Getenv(secrets.CredEnvVar(p)) != "" {
+					src = "env"
+				} else if persistent {
+					if v, _ := k.Get(secrets.ProviderCredKey(p)); v != "" {
+						src = "keyring"
+					}
+				}
+				provs = append(provs, provStatus{Provider: p, Source: src})
+			}
+			if g.JSON {
+				return writeJSON(cmd, map[string]any{"keyringPersistent": persistent, "providers": provs})
+			}
+			w := cmd.OutOrStdout()
+			if persistent {
+				fmt.Fprintln(w, "os keyring: available (credentials persist across invocations)")
+			} else {
+				fmt.Fprintln(w, "os keyring: UNAVAILABLE (no Secret Service / D-Bus); use env vars (DEVSTACK_<PROVIDER>_TOKEN)")
+			}
+			for _, p := range provs {
+				fmt.Fprintf(w, "  %-20s %s\n", p.Provider, p.Source)
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 
