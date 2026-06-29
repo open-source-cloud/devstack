@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -61,6 +62,25 @@ func (f *fakeRunner) sawUp(project string) bool {
 	}
 	return false
 }
+
+// upServices returns the explicit service args passed to a project's compose up
+// (everything after `up -d`), or nil if it was never up'd.
+func (f *fakeRunner) upServices(project string) []string {
+	for _, c := range f.cmds {
+		joined := strings.Join(c, " ")
+		if !strings.Contains(joined, "-p "+project) || !strings.Contains(joined, " up ") {
+			continue
+		}
+		for i, tok := range c {
+			if tok == "-d" {
+				return append([]string(nil), c[i+1:]...)
+			}
+		}
+		return nil
+	}
+	return nil
+}
+
 func (f *fakeRunner) sawDown(project string) bool {
 	for _, c := range f.cmds {
 		joined := strings.Join(c, " ")
@@ -401,4 +421,120 @@ func TestTrustPhaseFenced(t *testing.T) {
 	if m, _ := detail.(map[string]any); m["status"] == "" {
 		t.Errorf("httpsLocal off should report skipped, got %v", detail)
 	}
+}
+
+// sliceFixture builds a one-project workspace with two services: web (tagged
+// `frontend`, uses postgres) and worker (untagged, uses nothing). It exercises
+// selective-up (spec 12): --profile slices which services + shared come up.
+func sliceFixture(t *testing.T) (UpDeps, *fakeRunner, *state.DB) {
+	t.Helper()
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("workspace.yaml", "apiVersion: devstack/v1\nkind: Workspace\nname: demo\nshared:\n  postgres: { template: postgres, params: { version: \"16\" } }\nprojects:\n  - { name: app, path: app }\n")
+	write("app/devstack.yaml", `apiVersion: devstack/v1
+kind: Project
+name: app
+services:
+  web:
+    template: node.vite
+    profiles: [frontend]
+    uses: [workspace.shared.postgres]
+  worker:
+    template: node.vite
+`)
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	db, err := state.Open(context.Background(), filepath.Join(root, "state"), "ctx")
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	mc := &docker.MockClient{
+		Containers: []docker.Container{{
+			ID: "pg1", Name: "devstack-shared-postgres-1", State: "running",
+			Labels: map[string]string{generate.LabelManaged: "true", generate.LabelShared: "postgres"},
+		}},
+		Details: map[string]docker.ContainerDetails{
+			"pg1": {ID: "pg1", State: "running", Running: true, Health: docker.HealthHealthy},
+		},
+	}
+	src := template.NewFSSource(templates.FS)
+	lockPath := filepath.Join(root, "lock")
+	mgr := &workspace.Manager{Model: m, DB: db, Docker: mc, Source: src, LockPath: lockPath}
+	fr := &fakeRunner{}
+	d := UpDeps{
+		Model: m, DB: db, Docker: mc, Manager: mgr, Source: src,
+		LockPath: lockPath, Runner: fr, Env: map[string]string{}, NoHooks: true,
+	}
+	return d, fr, db
+}
+
+func TestBuildUpProfileSlicesServices(t *testing.T) {
+	// --profile frontend → only web is up'd (worker excluded); postgres is gated
+	// because web `uses` it.
+	d, fr, db := sliceFixture(t)
+	d.Profiles = []string{"frontend"}
+	recs, err := (&Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}).
+		Run(context.Background(), mustPhases(t, d))
+	if err != nil || AnyFailed(recs) {
+		t.Fatalf("saga: %v\n%+v", err, recs)
+	}
+	if got := fr.upServices("devstack-app"); len(got) != 1 || got[0] != "web" {
+		t.Errorf("frontend slice up'd %v, want [web] only", got)
+	}
+	if !fr.sawUp(generate.SharedStackName) {
+		t.Error("postgres should be up'd (web uses it)")
+	}
+}
+
+func TestBuildUpDefaultProfileIsAll(t *testing.T) {
+	// No --profile + no defaultProfile → reserved `all` → both services up'd.
+	d, fr, db := sliceFixture(t)
+	recs, err := (&Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}).
+		Run(context.Background(), mustPhases(t, d))
+	if err != nil || AnyFailed(recs) {
+		t.Fatalf("saga: %v\n%+v", err, recs)
+	}
+	got := fr.upServices("devstack-app")
+	if len(got) != 2 || !slices.Contains(got, "web") || !slices.Contains(got, "worker") {
+		t.Errorf("default(all) up'd %v, want web+worker", got)
+	}
+}
+
+func TestBuildUpProfileDropsInactiveProjectAndShared(t *testing.T) {
+	// A slice that matches no service → the project drops out entirely and no
+	// shared is gated (nothing uses it).
+	d, fr, db := sliceFixture(t)
+	d.Profiles = []string{"nonexistent"}
+	recs, err := (&Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}).
+		Run(context.Background(), mustPhases(t, d))
+	if err != nil || AnyFailed(recs) {
+		t.Fatalf("saga: %v\n%+v", err, recs)
+	}
+	if fr.sawUp("devstack-app") {
+		t.Error("no service active → project must not be up'd")
+	}
+	if fr.sawUp(generate.SharedStackName) {
+		t.Error("no active service uses shared → shared must not be up'd")
+	}
+}
+
+func mustPhases(t *testing.T, d UpDeps) []Phase {
+	t.Helper()
+	phases, err := BuildUp(d)
+	if err != nil {
+		t.Fatalf("BuildUp: %v", err)
+	}
+	return phases
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/health"
 	"github.com/open-source-cloud/devstack/internal/hooks"
 	"github.com/open-source-cloud/devstack/internal/lock"
+	"github.com/open-source-cloud/devstack/internal/profile"
 	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
@@ -46,8 +47,9 @@ type UpDeps struct {
 
 	Runner   docker.Runner     // compose CLI runner (nil → docker.ExecRunner)
 	Env      map[string]string // generate env (nil → process env, via generate default)
-	Profile  string
-	Projects []string // explicit subset; empty → every project in the workspace
+	Profile  string            // env-overlay profile for ${profile} (generate); "" → workspace default
+	Profiles []string          // spec-12 SERVICE SLICES (--profile, repeatable); empty → defaultProfile/all
+	Projects []string          // explicit subset; empty → every project in the workspace
 	// Secrets resolves secret:// refs; nil → built from workspace.secrets.providers
 	// with the built-in factories (SOPS+age). Injected for tests.
 	Secrets *secrets.Registry
@@ -76,6 +78,19 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		}
 	}
 
+	// Selective-up (spec 12): --profile slices the workspace to a set of active
+	// services + the shared instances they transitively use. Empty d.Profiles →
+	// defaultProfile, or the reserved `all` (every service). A project with no
+	// active services drops out of the up entirely.
+	active := profile.Resolve(d.Model, d.Profiles)
+	activeProjects := projects[:0:0]
+	for _, p := range projects {
+		if len(active.Services[p]) > 0 {
+			activeProjects = append(activeProjects, p)
+		}
+	}
+	projects = activeProjects
+
 	gen, err := generate.New(d.Model, d.Source, generate.WithEnv(d.Env), generate.WithProfile(d.Profile))
 	if err != nil {
 		return nil, err
@@ -95,7 +110,7 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		generatePhase(d, gen),
 		secretsPhase(d, projects, secretEnv),
 		trustPhase(d),
-		sharedPhase(d, projects),
+		sharedPhase(d, projects, active.Shared),
 	)
 	// Hook ordering (spec 11): workspace preUp → per-project (preUp → compose-up →
 	// postUp) → workspace postUp.
@@ -106,7 +121,7 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		if !d.NoHooks {
 			phases = append(phases, hookPhase(d, p, "preUp", d.Model.Projects[p].Hooks.PreUp, hooks.OnAbort))
 		}
-		phases = append(phases, composeUpPhase(d, p, secretEnv))
+		phases = append(phases, composeUpPhase(d, p, secretEnv, active.Services[p]))
 		if !d.NoHooks {
 			phases = append(phases, hookPhase(d, p, "postUp", d.Model.Projects[p].Hooks.PostUp, hooks.OnAbort))
 		}
@@ -278,8 +293,7 @@ func generatePhase(d UpDeps, gen *generate.Generator) Phase {
 
 // shared — register ref rows, bring up only the shared services the requested
 // projects use, then health-gate them. Compensation drops the ref rows.
-func sharedPhase(d UpDeps, projects []string) Phase {
-	names := sharedNamesUsedBy(d.Model, projects)
+func sharedPhase(d UpDeps, projects, names []string) Phase {
 	return Phase{
 		Name:     "shared",
 		Mutating: true,
@@ -361,7 +375,7 @@ func gateShared(ctx context.Context, d UpDeps, names []string) ([]map[string]any
 
 // composeUpPhase brings one project stack up. Compensation tears it back down
 // (idempotent) — refs are owned by the shared phase, not unwound here.
-func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string) Phase {
+func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string, services []string) Phase {
 	outDir := filepath.Join(d.Model.ProjectDir(project), generate.GenDir)
 	cp := func() docker.Compose {
 		return docker.Compose{
@@ -379,19 +393,25 @@ func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string) Pha
 		Scope:    project,
 		Mutating: true,
 		Fingerprint: func(context.Context) (string, error) {
-			return projectFingerprint(d.Model, project)
+			fp, err := projectFingerprint(d.Model, project)
+			if err != nil {
+				return "", err
+			}
+			// Key on the active slice too: narrowing/widening --profile must
+			// re-run compose-up rather than skip on a stale fingerprint.
+			return Fingerprint(append([]string{fp}, services...)...), nil
 		},
 		Run: func(ctx context.Context) (any, error) {
 			c := cp()
 			if d.Build {
-				if err := c.Build(ctx, false); err != nil {
+				if err := c.Build(ctx, false, services...); err != nil {
 					return nil, err
 				}
 			}
-			if err := c.Up(ctx); err != nil {
+			if err := c.Up(ctx, services...); err != nil {
 				return nil, fmt.Errorf("compose up %s: %w", project, err)
 			}
-			return map[string]any{"project": project}, nil
+			return map[string]any{"project": project, "services": services}, nil
 		},
 		Compensate: func(ctx context.Context) error {
 			c := cp()
@@ -454,29 +474,6 @@ func firstRunningID(cs []docker.Container) string {
 		return cs[0].ID
 	}
 	return ""
-}
-
-// sharedNamesUsedBy returns the sorted, de-duplicated shared service names the
-// given projects consume via `uses`.
-func sharedNamesUsedBy(m *config.Model, projects []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, project := range projects {
-		p, ok := m.Projects[project]
-		if !ok {
-			continue
-		}
-		for _, s := range p.Services {
-			for _, u := range s.Uses {
-				if ref, ok := config.ParseRef(u); ok && ref.Kind == config.RefShared && !seen[ref.Name] {
-					seen[ref.Name] = true
-					out = append(out, ref.Name)
-				}
-			}
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func sortedProjects(m *config.Model) []string {
