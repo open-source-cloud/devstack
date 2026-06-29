@@ -13,7 +13,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/open-source-cloud/devstack/internal/config"
+	"github.com/open-source-cloud/devstack/internal/generate"
 	"github.com/open-source-cloud/devstack/internal/git"
+	"github.com/open-source-cloud/devstack/internal/hooks"
 )
 
 // repo is one workspace repository to manage.
@@ -259,10 +261,13 @@ func newWsCloneCmd(g *GlobalOpts) *cobra.Command {
 // --- ws sync ---------------------------------------------------------------
 
 func newWsSyncCmd(g *GlobalOpts) *cobra.Command {
-	var jobs int
+	var (
+		jobs    int
+		noHooks bool
+	)
 	cmd := &cobra.Command{
 		Use:   "sync [names...]",
-		Short: "Fetch + fast-forward pull every repo in parallel",
+		Short: "Fetch + fast-forward pull every repo in parallel (runs postPull hooks on new commits)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			repos, err := loadRepos(args)
 			if err != nil {
@@ -275,20 +280,75 @@ func newWsSyncCmd(g *GlobalOpts) *cobra.Command {
 			if jobs <= 0 {
 				jobs = defaultJobs()
 			}
+			// postPull hooks come from each project's devstack.yaml. Load the full
+			// model best-effort: if a sibling repo isn't cloned yet the load fails,
+			// so we degrade to git-only sync (postPull just doesn't fire).
+			postPull := map[string][]config.Hook{}
+			if !noHooks {
+				if m, lerr := config.Load(mustCwd()); lerr == nil {
+					for name, p := range m.Projects {
+						if len(p.Hooks.PostPull) > 0 {
+							postPull[name] = p.Hooks.PostPull
+						}
+					}
+				} else if !g.Quiet {
+					fmt.Fprintf(cmd.ErrOrStderr(), "[note]    postPull hooks skipped: %v\n", lerr)
+				}
+			}
+
 			results := runPerRepo(cmd.Context(), repos, jobs, func(ctx context.Context, r repo) error {
 				if !gx.IsRepo(ctx, r.dir) {
 					return fmt.Errorf("not cloned (run `ws clone`)")
 				}
+				before, _ := gx.Head(ctx, r.dir) // "" if it can't be read; treated as changed
 				if err := gx.Fetch(ctx, r.dir); err != nil {
 					return err
 				}
-				return gx.Pull(ctx, r.dir)
+				if err := gx.Pull(ctx, r.dir); err != nil {
+					return err
+				}
+				after, _ := gx.Head(ctx, r.dir)
+				// postPull fires only when the pull advanced HEAD (spec 11): the
+				// SHA change IS the trigger, so no ledger is needed here.
+				if hooks := postPull[r.name]; len(hooks) > 0 && after != before {
+					return runPostPull(ctx, r, after, hooks)
+				}
+				return nil
 			})
 			return reportResults(cmd, g, "sync", results)
 		},
 	}
 	cmd.Flags().IntVar(&jobs, "jobs", 0, "max parallel syncs (default min(8, 2*CPUs))")
+	cmd.Flags().BoolVar(&noHooks, "no-hooks", false, "skip postPull hooks")
 	return cmd
+}
+
+// runPostPull runs a project's postPull hooks after its worktree advanced to head.
+// Host hooks run in the repo dir; compose-exec hooks target the project stack if
+// its generated compose exists. No state ledger: the HEAD change is the trigger,
+// so hooks run exactly once per pulled revision. preDown-style warn default keeps
+// a broken setup hook from failing the whole sync.
+func runPostPull(ctx context.Context, r repo, head string, hookList []config.Hook) error {
+	composeFile := filepath.Join(r.dir, generate.GenDir, generate.ComposeFile)
+	if _, err := os.Stat(composeFile); err != nil {
+		composeFile = ""
+	}
+	runner := &hooks.Runner{
+		Execer: hooks.OSExecer{BaseDir: r.dir, Project: "devstack-" + r.name, File: composeFile},
+	}
+	_, err := runner.RunPhase(ctx, hookList, hooks.PhaseOpts{
+		Project:          r.name,
+		Phase:            "postPull",
+		DefaultOnFailure: hooks.OnWarn,
+		ScopeKey:         func(config.Hook) string { return head }, // satisfies `once:` hooks (no ledger → runs)
+	})
+	return err
+}
+
+// mustCwd returns the working directory (empty on error — callers degrade).
+func mustCwd() string {
+	cwd, _ := os.Getwd()
+	return cwd
 }
 
 // --- ws git ----------------------------------------------------------------
