@@ -47,6 +47,10 @@ func projectStackName(project string) string { return "devstack-" + project }
 // shared network (never the bare service name — the collision guardrail).
 func sharedAlias(name string) string { return "shared-" + name }
 
+// SharedAlias is the exported form of sharedAlias, used by internal/workspace to
+// key the ledger by the same instance name the generated compose reaches.
+func SharedAlias(name string) string { return sharedAlias(name) }
+
 // envPrefix upper-cases and underscore-sanitizes a name for use as an env-var
 // prefix (e.g. the "postgres" import → POSTGRES_HOST).
 func envPrefix(name string) string {
