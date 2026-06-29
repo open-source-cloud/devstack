@@ -6,6 +6,7 @@ go 1.25.0
 
 require (
 	charm.land/fang/v2 v2.0.1
+	filippo.io/age v1.3.1
 	github.com/adrg/xdg v0.5.3
 	github.com/compose-spec/compose-go/v2 v2.12.1
 	github.com/go-playground/validator/v10 v10.30.3
@@ -23,6 +24,7 @@ require (
 
 require (
 	charm.land/lipgloss/v2 v2.0.1 // indirect
+	filippo.io/hpke v0.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260205113103-524a6607adb8 // indirect
