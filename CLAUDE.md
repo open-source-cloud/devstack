@@ -165,16 +165,33 @@ implemented and green (`make ci` + `make determinism`):
   (shared engines) + `php.nginx` → `php.laravel.nginx` (extends) + `node.vite`.
 - `internal/lock` — the flock spine (with a concurrency test).
 - `internal/state` — modernc SQLite ledger, WAL/busy_timeout/foreign_keys, versioned
-  migrations + backup, the spec-08 tables, keyed by Docker context.
+  migrations + backup, the spec-08 tables, keyed by Docker context. **M2 CRUD layer**
+  (`ledger.go`): ref-counting, port allocation, the provisioning ownership ledger,
+  shared-service rows + reconcile/orphan queries — all under the flock.
 - `internal/xdg` — XDG paths, WSL2 detection, `/mnt/*` refusal, 9p/networked-FS detection.
-- `internal/docker` — read-only `Client` interface (+ `MockClient`), moby-backed impl,
-  compose≥2.20 / git≥2.30 preflight.
+- `internal/docker` — read-only `Client` (+ `MockClient`), moby-backed impl,
+  compose≥2.20 / git≥2.30 preflight. **M2**: `EnsureNetwork`/`NetworkExists`/
+  `ListManaged` (label-filtered, All=true, one-offs excluded) + the `Compose` CLI
+  driver (up/down/stop/build via an injectable `Runner`; `CmdError` carries cmd+code+stderr).
+- `internal/provision` *(M2)* — idempotent per-project Postgres role/db via guarded
+  SQL behind a testable `Conn` interface; pgx/v5-backed impl + DSN builder (D8).
+- `internal/workspace` *(M2, the differentiator)* — resolves shared instances per
+  `(engine,major)`, ref-counting register/unregister, self-healing reconcile from
+  live containers, `shared status` projection, and host-port allocation (ledger ∪
+  bind-test ∪ Docker-published union). Unit+race tested with the mock client.
 - `internal/alias` — registry + symlink installer; `internal/version` — ldflags target.
-- CI (`.github/workflows/`), `.goreleaser.yaml`, `Makefile`.
+- CI (`.github/workflows/`: ci + release + installer + release-dryrun + determinism),
+  `.goreleaser.yaml`, `Makefile`, `install.sh` (curl|sh installer). Tagged **v0.1.0**.
 
-**Build order follows the ROADMAP**: M0 spine → M1 config+templating+generation →
-M2 shared services + workspace lifecycle (the differentiator) → M3 multi-repo git →
-then secrets (M4) / networking (M5) / onboarding+doctor+health+hooks (M6) / GA (M7).
+**Build order follows the ROADMAP**: M0 spine ✅ → M1 config+templating+generation ✅
+→ M2 shared services + workspace lifecycle (the differentiator) — **core landed**
+(ledger CRUD, docker network/compose driver, provisioning, ref-counting/reconcile,
+`shared status`); **remaining**: the `up`/`down` saga + `shared gc` (daemon
+orchestration — needs the dind/integration lane to build responsibly), and one
+design call to resolve first: **provisioning runs pgx from the host, so the shared
+Postgres needs a ledger-allocated published host port** (the default is no host
+ports) — wire that into generation + the up saga. → M3 multi-repo git → secrets
+(M4) / networking (M5) / onboarding+doctor+health+hooks (M6) / GA (M7).
 Anything that mutates shared state goes through `internal/lock` from its first commit.
 
 ## Conventions specific to this repo
