@@ -67,9 +67,9 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 
 ### M6 (saga completion + glue)
 - [x] X1 config completion — **DONE** (PR #27, `1c77d44`)
-- [ ] X2 `internal/health` full DAG — TODO  *(ready: X1,C3b in)*
+- [x] X2 `internal/health` full DAG — **DONE** (PR #37: BuildGraph/Cycle/Waves/RequireHealthchecks)
 - [ ] X3 hooks full — TODO  *(ready: X1,C4 in)*
-- [ ] X4 profiles/selective-up — TODO  *(ready once X2 lands; X1 in)*
+- [ ] X4 profiles/selective-up — TODO  *(ready: X1,X2 in)*
 - [ ] X5 orchestrate completion — BLOCKED (X2,X3,X4)
 - [~] X6 `internal/doctor` full matrix + `--fix` — **PARTIAL**: trust probe (PR #33) + dns /etc/hosts probe (PR #35). Remaining: shared-ledger probe + safe `--fix`.
 - [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (S5,X6)
@@ -101,3 +101,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **proxy labels wired into generate** (PR #29, `d0e04e8`, N5 part 1) — `proxy.LabelsForService` → caddy-docker-proxy labels merged onto routed services in `buildProjectService` (no-op when proxy disabled, golden/determinism unchanged). The proxy feature (N1 route table → labels) is now end-to-end. **29 PRs merged this session.** N5 remaining = saga trust phase + doctor trust/dns probes. Broad frontier still open: S2–S6, provision saga phase (host-port coupling), X2/X3/X4/X6/X7/X9, G2–G5.
 - (night 2 cont.) **S2 merged** (PR #31) — SOPS+age secrets provider (shells `sops -d --output-type json`, batch-per-file, `RegisterBuiltins`), fake-runner tested (sops not on the runner yet). **M4 has S1+S2; S3/S4/S5/S6 now ready.** **31 PRs merged this session — M2 complete; M4 S1/S2; M5 N1–N4 + proxy-generate; M6 X1/X8; M7 G1 + CI/tests overhaul.** Remaining for `done`: S3–S6, the provision saga phase (host-port coupling), N5 trust phase + doctor probes, X2/X3/X4/X6/X7/X9, G2–G5.
 - (night 2 cont.) **X6 trust probe merged** (PR #33) — `doctor` now reports local-CA readiness (mkcert/CA/certutil) as a non-fatal warning with remediation (decision-#3 self-verify for N2). **33 PRs merged this session.** X6 remaining: dns/shared doctor probes + a safe `--fix`. Frontier for `done`: S3–S6, provision saga phase (host-port coupling), N5 trust saga phase, X2/X3/X4/X5/X7/X9, G2–G5.
+- (night 2 cont.) **X2 merged** (PR #37) — the workspace dependsOn DAG in `internal/health` (BuildGraph, Cycle with path, stable topo Waves, RequireHealthchecks generate-time guard), pure/unit-tested. **Unblocks X4 (profiles) + X5 (orchestrate consumes Waves).** 37 PRs merged.
