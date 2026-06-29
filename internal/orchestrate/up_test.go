@@ -14,6 +14,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
+	"github.com/open-source-cloud/devstack/internal/trust"
 	"github.com/open-source-cloud/devstack/internal/workspace"
 	"github.com/open-source-cloud/devstack/templates"
 )
@@ -178,7 +179,7 @@ func TestBuildUpHappyPath(t *testing.T) {
 	}
 	for _, r := range recs2 {
 		switch r.Phase {
-		case "preflight", "secrets", "preUp", "postUp": // AlwaysRun phases
+		case "preflight", "secrets", "trust", "preUp", "postUp": // AlwaysRun phases
 			if r.Status != StatusOK {
 				t.Errorf("%s should re-run ok, got %q", r.Phase, r.Status)
 			}
@@ -361,5 +362,43 @@ func TestBuildUpHookOrdering(t *testing.T) {
 	if !(idx["preUp"] < idx["preUp@app"] && idx["preUp@app"] < idx["compose-up@app"]) {
 		t.Errorf("hook ordering wrong: ws-preUp=%d app-preUp=%d compose-up=%d",
 			idx["preUp"], idx["preUp@app"], idx["compose-up@app"])
+	}
+}
+
+// fakeTrustRunner makes trust.Install attempt mkcert and fail (to test fencing).
+type fakeTrustRunner struct{}
+
+func (fakeTrustRunner) Output(context.Context, string, ...string) ([]byte, error) {
+	return nil, nil
+}
+func (fakeTrustRunner) Run(context.Context, string, ...string) error {
+	return errors.New("mkcert -install: permission denied")
+}
+func (fakeTrustRunner) LookPath(string) (string, error) { return "/usr/bin/mkcert", nil }
+
+func TestTrustPhaseFenced(t *testing.T) {
+	// httpsLocal on + Install fails → the phase is FENCED (no error, warning).
+	d := UpDeps{
+		Model: &config.Model{Workspace: config.Workspace{
+			Network: config.Network{Proxy: config.Proxy{Engine: "caddy", HTTPSLocal: true}},
+		}},
+		Trust: &trust.Trust{Runner: fakeTrustRunner{}},
+	}
+	detail, err := trustPhase(d).Run(context.Background())
+	if err != nil {
+		t.Fatalf("trust phase must be fenced (no error), got %v", err)
+	}
+	if m, _ := detail.(map[string]any); m["status"] != "warning" {
+		t.Errorf("expected a warning status on install failure, got %v", detail)
+	}
+
+	// httpsLocal off → skipped no-op.
+	d.Model.Workspace.Network.Proxy.HTTPSLocal = false
+	detail, err = trustPhase(d).Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, _ := detail.(map[string]any); m["status"] == "" {
+		t.Errorf("httpsLocal off should report skipped, got %v", detail)
 	}
 }
