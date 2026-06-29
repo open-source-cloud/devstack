@@ -71,11 +71,12 @@ func (e *CmdError) Unwrap() error { return e.Err }
 // project name and compose file (DECISIONS D5). Lifecycle verbs run here;
 // container enumeration stays on the read-only SDK Client.
 type Compose struct {
-	Project string   // -p <project>
-	File    string   // -f <compose file>
-	Dir     string   // working dir (build contexts resolve relative to it)
-	Env     []string // extra env (resolved secrets), appended to os.Environ
-	Runner  Runner
+	Project   string   // -p <project>
+	File      string   // -f <compose file>
+	Overrides []string // additional -f overlays, applied in order after File (up-time only)
+	Dir       string   // working dir (build contexts resolve relative to it)
+	Env       []string // extra env (resolved secrets), appended to os.Environ
+	Runner    Runner
 }
 
 // NewCompose builds a Compose driver using the real exec runner.
@@ -89,7 +90,13 @@ func (c *Compose) base() []string {
 	if c.File == "" {
 		return []string{"compose", "-p", c.Project}
 	}
-	return []string{"compose", "-p", c.Project, "-f", c.File}
+	args := []string{"compose", "-p", c.Project, "-f", c.File}
+	// Overlays (e.g. the up-time provision port mapping) are applied after the base
+	// file so their values win; later files override earlier ones (compose merge).
+	for _, ov := range c.Overrides {
+		args = append(args, "-f", ov)
+	}
+	return args
 }
 
 // Up brings the stack (or the named subset of services) up detached. With no

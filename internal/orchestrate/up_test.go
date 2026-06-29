@@ -12,6 +12,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/generate"
+	"github.com/open-source-cloud/devstack/internal/provision"
 	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
@@ -81,6 +82,24 @@ func (f *fakeRunner) upServices(project string) []string {
 	return nil
 }
 
+// saw reports whether any single recorded command contains all the needles.
+func (f *fakeRunner) saw(needles ...string) bool {
+	for _, c := range f.cmds {
+		joined := strings.Join(c, " ")
+		all := true
+		for _, n := range needles {
+			if !strings.Contains(joined, n) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *fakeRunner) sawDown(project string) bool {
 	for _, c := range f.cmds {
 		joined := strings.Join(c, " ")
@@ -141,7 +160,7 @@ hooks:
 	fr := &fakeRunner{}
 	d := UpDeps{
 		Model: m, DB: db, Docker: mc, Manager: mgr, Source: src,
-		LockPath: lockPath, Runner: fr, Env: map[string]string{},
+		LockPath: lockPath, Runner: fr, Env: map[string]string{}, PgConnect: okPgConnect,
 	}
 	return d, fr, db
 }
@@ -312,7 +331,7 @@ func TestBuildUpInjectsSecretEnv(t *testing.T) {
 	d := UpDeps{
 		Model: m, DB: db, Docker: mc,
 		Manager: &workspace.Manager{Model: m, DB: db, Docker: mc, Source: src, LockPath: lockPath},
-		Source:  src, LockPath: lockPath, Runner: fr, Env: map[string]string{},
+		Source:  src, LockPath: lockPath, Runner: fr, Env: map[string]string{}, PgConnect: okPgConnect,
 		Secrets: reg,
 	}
 	phases, err := BuildUp(d)
@@ -475,7 +494,7 @@ services:
 	fr := &fakeRunner{}
 	d := UpDeps{
 		Model: m, DB: db, Docker: mc, Manager: mgr, Source: src,
-		LockPath: lockPath, Runner: fr, Env: map[string]string{}, NoHooks: true,
+		LockPath: lockPath, Runner: fr, Env: map[string]string{}, NoHooks: true, PgConnect: okPgConnect,
 	}
 	return d, fr, db
 }
@@ -537,4 +556,108 @@ func mustPhases(t *testing.T, d UpDeps) []Phase {
 		t.Fatalf("BuildUp: %v", err)
 	}
 	return phases
+}
+
+// --- provision phase (D8) ---------------------------------------------------
+
+// fakePgConn records the SQL the provisioner runs; Exists=false so EnsureProject
+// takes the create path. Implements provision.Conn.
+type fakePgConn struct{ execs []string }
+
+func (c *fakePgConn) Exec(_ context.Context, sql string, _ ...any) error {
+	c.execs = append(c.execs, sql)
+	return nil
+}
+func (c *fakePgConn) Exists(_ context.Context, _ string, _ ...any) (bool, error) {
+	return false, nil
+}
+
+// okPgConnect is the no-op connector used by the shared fixtures so the full saga
+// (including provision) runs daemon-free.
+func okPgConnect(context.Context, string) (provision.Conn, func() error, error) {
+	return &fakePgConn{}, func() error { return nil }, nil
+}
+
+// recordingPg captures every connection + DSN for assertions.
+type recordingPg struct {
+	conns []*fakePgConn
+	dsns  []string
+}
+
+func (r *recordingPg) connect(_ context.Context, dsn string) (provision.Conn, func() error, error) {
+	c := &fakePgConn{}
+	r.conns = append(r.conns, c)
+	r.dsns = append(r.dsns, dsn)
+	return c, func() error { return nil }, nil
+}
+
+func TestBuildUpProvisionsPerProjectDB(t *testing.T) {
+	d, fr, db := upFixture(t) // project app, service web, uses workspace.shared.postgres
+	rp := &recordingPg{}
+	d.PgConnect = rp.connect
+
+	recs, err := (&Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}).
+		Run(context.Background(), mustPhases(t, d))
+	if err != nil || AnyFailed(recs) {
+		t.Fatalf("saga: %v\n%+v", err, recs)
+	}
+
+	// The provision phase ran.
+	got := map[string]string{}
+	for _, r := range recs {
+		got[r.Phase+scopeSuffix(r.Scope)] = r.Status
+	}
+	if got["provision"] != StatusOK {
+		t.Fatalf("provision phase = %q, want ok (all: %+v)", got["provision"], got)
+	}
+	// Connected once to the shared Postgres on loopback.
+	if len(rp.dsns) != 1 || !strings.Contains(rp.dsns[0], "127.0.0.1") {
+		t.Fatalf("provision DSNs = %v, want one loopback DSN", rp.dsns)
+	}
+	// EnsureProject ran the create path (CREATE ROLE + CREATE DATABASE).
+	joined := strings.Join(rp.conns[0].execs, " | ")
+	if !strings.Contains(joined, "CREATE ROLE") || !strings.Contains(joined, "CREATE DATABASE") {
+		t.Errorf("provisioning SQL missing role/db creation: %s", joined)
+	}
+	// Ownership recorded in the ledger.
+	rows, _ := db.ProvisionedFor("app")
+	var kinds []string
+	for _, r := range rows {
+		kinds = append(kinds, r.Kind+":"+r.Name)
+	}
+	if !slices.Contains(kinds, "role:app") || !slices.Contains(kinds, "database:app") {
+		t.Errorf("provisioned rows = %v, want role:app + database:app", kinds)
+	}
+	// The shared stack was brought up WITH the loopback port overlay.
+	if !fr.saw("-p "+generate.SharedStackName, "-f", "compose.provision.yaml") {
+		t.Errorf("shared up did not include the provision overlay: %v", fr.cmds)
+	}
+	// The overlay file was written, loopback-bound.
+	overlay := filepath.Join(d.Model.Root, generate.GenDir, "shared", "compose.provision.yaml")
+	body, err := os.ReadFile(overlay)
+	if err != nil {
+		t.Fatalf("overlay not written: %v", err)
+	}
+	if !strings.Contains(string(body), "127.0.0.1:") || !strings.Contains(string(body), ":5432") {
+		t.Errorf("overlay not loopback-bound to 5432:\n%s", body)
+	}
+}
+
+func TestBuildUpNoProvisionSkips(t *testing.T) {
+	d, _, db := upFixture(t)
+	d.NoProvision = true
+	d.PgConnect = func(context.Context, string) (provision.Conn, func() error, error) {
+		t.Fatal("PgConnect must not be called when NoProvision is set")
+		return nil, nil, nil
+	}
+	recs, err := (&Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}).
+		Run(context.Background(), mustPhases(t, d))
+	if err != nil || AnyFailed(recs) {
+		t.Fatalf("saga: %v\n%+v", err, recs)
+	}
+	for _, r := range recs {
+		if r.Phase == "provision" {
+			t.Error("provision phase present despite NoProvision")
+		}
+	}
 }
