@@ -1,0 +1,18 @@
+schemaVersion: 1
+description: "Node + Vite dev server built from ./build."
+params:
+  nodeVersion:
+    type: string
+    default: "20"
+    description: "Node major version base image tag."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  command: ["npm", "run", "dev"]
+  environment:
+    NODE_ENV: development

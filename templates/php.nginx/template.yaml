@@ -1,0 +1,17 @@
+schemaVersion: 1
+description: "PHP-FPM base image built from ./build (parent template for PHP stacks)."
+params:
+  phpVersion:
+    type: string
+    default: "8.3"
+    description: "PHP version base image tag."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      PHP_VERSION: "[[ .params.phpVersion ]]"
+  restart: unless-stopped
+  environment:
+    XDEBUG_MODE: "off"

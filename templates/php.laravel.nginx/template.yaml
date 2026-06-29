@@ -1,0 +1,18 @@
+schemaVersion: 1
+extends: php.nginx
+description: "Laravel application on PHP-FPM (extends php.nginx)."
+params:
+  appEnv:
+    type: string
+    default: local
+    description: "Laravel APP_ENV."
+
+service:
+  build:
+    args:
+      WITH_COMPOSER: "true"
+  environment:
+    APP_ENV: "[[ .params.appEnv ]]"
+    LARAVEL: "true"
+  entrypoint: ["/entrypoint.sh"]
+  command: ["php-fpm"]

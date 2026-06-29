@@ -1,0 +1,25 @@
+schemaVersion: 1
+description: "Shared Redis engine, reached over the shared network at shared-redis."
+provides: redis
+exports: [host, port]
+defaultPort: 6379
+params:
+  version:
+    type: string
+    default: "7"
+    description: "Redis major version image tag."
+
+service:
+  image: "redis:[[ .params.version ]]"
+  restart: unless-stopped
+  command: ["redis-server", "--appendonly", "yes"]
+  volumes:
+    - "redisdata:/data"
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+volumes:
+  redisdata: {}

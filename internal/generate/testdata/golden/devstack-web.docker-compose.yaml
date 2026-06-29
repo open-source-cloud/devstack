@@ -1,0 +1,30 @@
+name: devstack-web
+services:
+  web:
+    build:
+      context: web/build
+      dockerfile: Dockerfile
+      args:
+        NODE_VERSION: "20"
+    command:
+      - npm
+      - run
+      - dev
+    environment:
+      API_HOST: api
+      NODE_ENV: development
+    labels:
+      com.devstack.managed: "true"
+      com.devstack.project: web
+      com.devstack.service: web
+      com.devstack.workspace: acme
+    networks:
+      default: null
+      devstack_shared: null
+    restart: unless-stopped
+networks:
+  default:
+    name: devstack-web_default
+  devstack_shared:
+    name: devstack_shared
+    external: true

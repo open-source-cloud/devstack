@@ -1,0 +1,39 @@
+schemaVersion: 1
+description: "Shared PostgreSQL engine, reached over the shared network at shared-postgres."
+provides: postgres
+exports: [host, port, user, password, database]
+defaultPort: 5432
+params:
+  version:
+    type: string
+    default: "18"
+    description: "PostgreSQL major version image tag."
+  rootUser:
+    type: string
+    default: devstack
+    description: "Superuser role (per-project roles are provisioned on top in M2)."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Superuser password for local development."
+
+service:
+  image: "postgres:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: "[[ .params.rootUser ]]"
+    POSTGRES_PASSWORD: "[[ .params.rootPassword ]]"
+    POSTGRES_DB: "[[ .params.rootUser ]]"
+  # PG18+ moved PGDATA to /var/lib/postgresql (was /var/lib/postgresql/data);
+  # mounting the wrong path silently loses persistence (DECISIONS D8), so the
+  # mount target is chosen from the major version.
+  volumes:
+    - "pgdata:[[ if lt (atoi .params.version) 18 ]]/var/lib/postgresql/data[[ else ]]/var/lib/postgresql[[ end ]]"
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U [[ .params.rootUser ]]"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+volumes:
+  pgdata: {}

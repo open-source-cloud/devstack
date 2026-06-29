@@ -1,0 +1,101 @@
+name: devstack-shared
+services:
+  minio:
+    command:
+      - server
+      - /data
+      - --console-address
+      - :9001
+    environment:
+      MINIO_ROOT_PASSWORD: devstackadmin
+      MINIO_ROOT_USER: devstackadmin
+    healthcheck:
+      test:
+        - CMD
+        - mc
+        - ready
+        - local
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: minio/minio:latest
+    labels:
+      com.devstack.managed: "true"
+      com.devstack.shared: minio
+      com.devstack.workspace: acme
+    networks:
+      devstack_shared:
+        aliases:
+          - shared-minio
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: miniodata
+        target: /data
+        volume: {}
+  postgres:
+    environment:
+      POSTGRES_DB: devstack
+      POSTGRES_PASSWORD: devstack
+      POSTGRES_USER: devstack
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U devstack
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: postgres:16
+    labels:
+      com.devstack.managed: "true"
+      com.devstack.shared: postgres
+      com.devstack.workspace: acme
+    networks:
+      devstack_shared:
+        aliases:
+          - shared-postgres
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: pgdata
+        target: /var/lib/postgresql/data
+        volume: {}
+  redis:
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: redis:7
+    labels:
+      com.devstack.managed: "true"
+      com.devstack.shared: redis
+      com.devstack.workspace: acme
+    networks:
+      devstack_shared:
+        aliases:
+          - shared-redis
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: redisdata
+        target: /data
+        volume: {}
+networks:
+  devstack_shared:
+    name: devstack_shared
+    external: true
+volumes:
+  miniodata:
+    name: devstack-shared_miniodata
+  pgdata:
+    name: devstack-shared_pgdata
+  redisdata:
+    name: devstack-shared_redisdata

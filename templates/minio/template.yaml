@@ -1,0 +1,34 @@
+schemaVersion: 1
+description: "Shared MinIO object storage, reached over the shared network at shared-minio."
+provides: minio
+exports: [host, port, accessKey, secretKey]
+defaultPort: 9000
+params:
+  image:
+    type: string
+    default: "minio/minio:latest"
+    description: "MinIO image (date-tagged releases recommended for reproducibility)."
+  rootUser:
+    type: string
+    default: devstackadmin
+  rootPassword:
+    type: string
+    default: devstackadmin
+
+service:
+  image: "[[ .params.image ]]"
+  restart: unless-stopped
+  command: ["server", "/data", "--console-address", ":9001"]
+  environment:
+    MINIO_ROOT_USER: "[[ .params.rootUser ]]"
+    MINIO_ROOT_PASSWORD: "[[ .params.rootPassword ]]"
+  volumes:
+    - "miniodata:/data"
+  healthcheck:
+    test: ["CMD", "mc", "ready", "local"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+volumes:
+  miniodata: {}

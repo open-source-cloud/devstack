@@ -1,0 +1,40 @@
+name: devstack-api
+services:
+  api:
+    build:
+      context: api/build
+      dockerfile: Dockerfile
+      args:
+        PHP_VERSION: "8.3"
+        WITH_COMPOSER: "true"
+    command:
+      - php-fpm
+    entrypoint:
+      - /entrypoint.sh
+    environment:
+      API_URL: https://api
+      APP_ENV: dev
+      LARAVEL: "true"
+      POSTGRES_DATABASE: api
+      POSTGRES_HOST: shared-postgres
+      POSTGRES_PASSWORD: null
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: api
+      XDEBUG_MODE: "off"
+    expose:
+      - "8080"
+    labels:
+      com.devstack.managed: "true"
+      com.devstack.project: api
+      com.devstack.service: api
+      com.devstack.workspace: acme
+    networks:
+      default: null
+      devstack_shared: null
+    restart: unless-stopped
+networks:
+  default:
+    name: devstack-api_default
+  devstack_shared:
+    name: devstack_shared
+    external: true

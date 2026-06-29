@@ -136,14 +136,33 @@ wrap risky ones.
 
 ## Current status (what exists vs. spec)
 
-M0 foundations are implemented and green (`make ci`):
+M0 foundations **and the full M1 pipeline (config + templating + generation)** are
+implemented and green (`make ci` + `make determinism`):
 
 - `cmd/devstack` — thin entry: `argv[0]` alias dispatch + `--as` override + fang.
 - `internal/cli` — cobra tree wrapped by fang; global `--json/--quiet/--debug/--verbose`;
-  slog logging; `doctor` (real preflight matrix + `--json`), `alias add/remove/list`,
-  `version` are functional. The rest of the spec-07 surface (`up`, `down`, `status`,
-  `ws`, `shared`, `secrets`, `trust`, `dns`, `tunnel`, `template`, `import`, `self`,
-  `workspace`) are **milestone-tagged stubs** in `internal/cli/stubs.go`.
+  slog logging; `doctor` (real preflight matrix + `--json`), `config validate/show`,
+  `generate` (the M1 pipeline entry point, with `--project/--profile/--check`),
+  `template list/lint/test/init`, `alias add/remove/list`, `version` are functional.
+  The remaining spec-07 surface (`up`, `down`, `status`, `ws`, `shared`, `secrets`,
+  `trust`, `dns`, `tunnel`, `import`, `self`, `workspace`) are **milestone-tagged
+  stubs** in `internal/cli/stubs.go`.
+- `internal/config` — M1 two-file loader (spec 01): goccy parse with positions,
+  validator/v10 + custom cross-ref/cycle resolver, the `${env/self/ref/profile}`
+  grammar, immutable model. Exposes `ParseRef` for the generator's `${ref}` resolver.
+- `internal/template` — M1 text engine (spec 02): stdlib `text/template` with custom
+  `[[ ]]` delimiters + a deterministic in-tree FuncMap, `RenderText`/`RenderYAML`,
+  the `TemplateSource` interface (embedded built-ins; git/OCI deferred to spec 19),
+  and `extends`-chain render-then-merge.
+- `internal/merge` — M1 deep-merge (spec 02): recursive map merge, **lists replace
+  by default** with opt-in `$merge: append`, deep-clones to avoid shared-ref mutation.
+- `internal/generate` — M1 generation owner (spec 02, ARCHITECTURE §3): builds the
+  compose model programmatically, validates/normalizes via **compose-go/v2**, resolves
+  `${ref}`/`import` against the workspace graph, emits per-service **valueless secret
+  env keys** (§7.5 coupling), `writeIfChanged` (atomic) + the SHA-256 rebuild-hash
+  ledger (`.devstack/state.json`). Deterministic output is golden- and CI-asserted.
+- `templates/` — embedded built-ins via `go:embed`: `postgres`/`redis`/`minio`
+  (shared engines) + `php.nginx` → `php.laravel.nginx` (extends) + `node.vite`.
 - `internal/lock` — the flock spine (with a concurrency test).
 - `internal/state` — modernc SQLite ledger, WAL/busy_timeout/foreign_keys, versioned
   migrations + backup, the spec-08 tables, keyed by Docker context.

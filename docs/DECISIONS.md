@@ -16,8 +16,10 @@ Project-wide constraints that gate everything:
 - **Import path is `charm.land/fang/v2`** (vanity domain) as of v2 — *not* `github.com/charmbracelet/fang` (the README's top example is stale). go.mod reads `module charm.land/fang/v2`.
 - fang declares `go 1.25.0` and self-describes as "experimental" — API stability not guaranteed. The removable-wrapper posture is the mitigation.
 
-## D2. Templating & compose generation — **OPEN DECISION** (programmatic compose + text-template engine)
+## D2. Templating & compose generation — **RESOLVED (M1)** (programmatic compose + text-template engine)
 **Decision (recommended):** Build the Docker Compose document as a **typed model validated through `compose-go/v2`** — *not* by string-templating YAML. Reserve a **text-template engine** strictly for unstructured artifacts (Dockerfiles, proxy/entrypoint configs) and user-authored templates. Custom delimiters (`%{ }%` `%= =%` `%# #%`, or `[[ ]]`) so template syntax never collides with shell `${VAR}` / Dockerfile `$TAG`.
+
+> **M1 outcome:** built as specified. Compose is assembled programmatically and run through **`compose-go/v2` v2.12.1** (`loader.LoadWithContext` validate/normalize → `Project.MarshalYAML` for stable-key output). The text engine is **Option A** — stdlib `text/template` with `[[ ]]` delimiters behind `internal/template`; **sprig is not pulled in** (its `now`/`uuid`/`rand*` helpers would break determinism) — a small deterministic FuncMap is reimplemented in-tree with golden tests. See [OPEN-QUESTIONS Q-T](OPEN-QUESTIONS.md) (resolved) and `internal/{template,merge,generate}`.
 
 **The open part — which text-template engine:** this is a genuine fork the builder should confirm ([OPEN-QUESTIONS Q-T](OPEN-QUESTIONS.md)):
 - **Option A — stdlib `text/template` + `Masterminds/sprig`** (recommended for a clean-slate). Zero engine-maintenance risk, lean, fast, `Delims()` avoids `${}` clashes. Weaker: no true template inheritance, clunky pipelines. Fine *because* we generate compose programmatically and only template text files.

@@ -21,7 +21,7 @@ BINDIR      ?= $(or $(XDG_BIN_HOME),$(PREFIX)/bin)
 
 # The release binary MUST be CGO-free (static), but `go test -race` REQUIRES cgo.
 # So CGO is set per-target, never globally.
-.PHONY: build run test test-race test-one vet fmt fmt-check lint tidy vuln clean snapshot ci install uninstall smoke help
+.PHONY: build run test test-race test-one vet fmt fmt-check lint tidy vuln clean snapshot ci determinism install uninstall smoke help
 
 build: ## Build the static binary into ./dist
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/$(BINARY) ./cmd/devstack
@@ -59,6 +59,22 @@ snapshot: ## Local goreleaser snapshot build (no publish)
 
 ci: fmt-check vet build test-race ## What CI runs
 
+determinism: build ## Assert generation is byte-identical across runs/paths (M1, spec 02)
+	@set -eu; \
+	bin="$$PWD/dist/$(BINARY)"; \
+	a="$$(mktemp -d)"; b="$$(mktemp -d)"; \
+	trap 'rm -rf "$$a" "$$b"' EXIT; \
+	cp -r internal/config/testdata/valid/. "$$a/"; \
+	cp -r internal/config/testdata/valid/. "$$b/"; \
+	DEVSTACK_WORKSPACE="$$a" "$$bin" generate --quiet; \
+	DEVSTACK_WORKSPACE="$$b" "$$bin" generate --quiet; \
+	if diff -r "$$a" "$$b" >/dev/null; then \
+	  printf '\033[32mok\033[0m  generation is byte-deterministic across paths\n'; \
+	else \
+	  echo "FAIL: generated artifacts differ between runs:"; diff -r "$$a" "$$b"; exit 1; \
+	fi; \
+	DEVSTACK_WORKSPACE="$$a" "$$bin" generate --check --quiet || { echo "FAIL: --check reports drift after generate"; exit 1; }
+
 install: build ## Install the binary into $(BINDIR) (override with PREFIX= or XDG_BIN_HOME=)
 	@install -d "$(BINDIR)"
 	@install -m 0755 dist/$(BINARY) "$(BINDIR)/$(BINARY)"
@@ -93,6 +109,16 @@ smoke: build ## Exercise the built binary end-to-end in an isolated XDG sandbox
 	echo "-> doctor --json emits the checks contract (a down daemon is OK here)"; \
 	"$$bin" doctor --json >"$$sandbox/doctor.json" 2>/dev/null || true; \
 	grep -q '"checks"' "$$sandbox/doctor.json" || { echo "FAIL: doctor --json missing \"checks\""; exit 1; }; \
+	echo "-> generate renders + validates a workspace, and --check is idempotent"; \
+	ws="$$sandbox/ws"; mkdir -p "$$ws/web"; \
+	printf 'apiVersion: devstack/v1\nkind: Workspace\nname: demo\nshared:\n  postgres: { template: postgres }\nprojects:\n  - { name: web, path: web }\n' >"$$ws/workspace.yaml"; \
+	printf 'apiVersion: devstack/v1\nkind: Project\nname: web\nservices:\n  web:\n    template: node.vite\n    uses: [workspace.shared.postgres]\n    env:\n      import:\n        - { from: workspace.shared.postgres, vars: [host, port] }\n' >"$$ws/web/devstack.yaml"; \
+	DEVSTACK_WORKSPACE="$$ws" "$$bin" generate --quiet || { echo "FAIL: generate"; exit 1; }; \
+	test -f "$$ws/.devstack/shared/docker-compose.yaml" || { echo "FAIL: shared compose not generated"; exit 1; }; \
+	grep -q 'shared-postgres' "$$ws/web/.devstack/docker-compose.yaml" || { echo "FAIL: web compose missing shared-postgres ref"; exit 1; }; \
+	DEVSTACK_WORKSPACE="$$ws" "$$bin" generate --check --quiet || { echo "FAIL: generate --check stale after generate"; exit 1; }; \
+	echo "-> template list shows the built-ins"; \
+	"$$bin" template list | grep -q 'php.laravel.nginx' || { echo "FAIL: template list missing built-in"; exit 1; }; \
 	printf '\n\033[32mok\033[0m  smoke passed\n'
 
 clean:

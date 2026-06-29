@@ -23,7 +23,7 @@ Turn service templates + resolved config into deterministic, valid Docker Compos
 - **Writing:** single `writeIfChanged(path, bytes)` → compare, write only on diff, **atomic** (tmp in same dir + `os.Rename`). Deterministic output (sorted keys, `KeepTrailingNewline`).
 
 ## `${ref}` cross-service resolution
-After merge, resolve cross-service references (`${ref:workspace.shared.postgres.host}`) in a post-render pass **against the workspace service graph** (injected resolver), not a single project — this is what lets a project template reference shared Postgres. Emits the env injection (e.g. `DATABASE_URL=postgres://<u>:<p>@shared-postgres:5432/<db>`).
+After merge, resolve cross-service references (`${ref:workspace.shared.postgres.host}`) in a post-render pass **against the workspace service graph** (injected resolver), not a single project — this is what lets a project template reference shared Postgres. Emits the env injection from the **non-secret** attributes (host/port/user/database), e.g. `POSTGRES_HOST=shared-postgres`, `POSTGRES_PORT=5432`, `POSTGRES_USER=<proj>`, `POSTGRES_DATABASE=<proj>`. The **password is never embedded inline** — secret attributes (`password`/`secret`/`token`/…) are rejected in `${ref:...}` and must flow through `env.import`, which emits a **valueless** per-service env key (`POSTGRES_PASSWORD:`) whose value is supplied at runtime via the process env ([spec 04](04-secrets.md), ARCHITECTURE §7.5). A consumer assembles a `DATABASE_URL` itself from those keys; devstack does not synthesize a secret-bearing URL into a generated file.
 
 ## Deep-merge (`internal/merge`)
 - Recursive map merge + scalar overwrite, **left-to-right**.

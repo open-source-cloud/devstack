@@ -73,7 +73,20 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: go build -o /dev/null ./cmd/devstack
 
+  determinism:
+    # Asserts the generation pipeline is byte-identical across runs/paths
+    # (spec 02 acceptance #3, ARCHITECTURE §3) — the rebuild-hash and any
+    # "commit generated artifacts" decision depend on it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - name: determinism (byte-identical generation)
+        run: make determinism
+
   # Placeholder lanes wired as their milestones land:
   #  - schema-drift: JSON-Schema ↔ Go-struct round-trip check (M1)
-  #  - determinism: assert byte-identical generated artifacts (M1)
   #  - integration: testcontainers-go / dind lane behind a build tag (M7)
