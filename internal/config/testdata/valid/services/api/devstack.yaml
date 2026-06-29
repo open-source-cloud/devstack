@@ -14,3 +14,28 @@ services:
       import:
         - { from: workspace.shared.postgres, vars: [host, port, user, password, database] }
     ports: { http: 8080 }
+    healthcheck:
+      kind: http
+      port: 8080
+      path: /healthz
+      expectStatus: "200-399"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      startPeriod: 20s
+    dependsOn:
+      - { service: workspace.shared.postgres, condition: healthy }
+      - { service: workspace.shared.redis, condition: healthy }
+hooks:
+  firstRun:
+    - name: migrate-and-seed
+      run: exec
+      service: api
+      command: ["sh", "-lc", "php artisan migrate --force && php artisan db:seed --force"]
+      workdir: /var/www/html
+      env: { APP_ENV: "${profile}" }
+      timeout: 5m
+      retries: 3
+      onFailure: abort
+  postUp:
+    - { name: cache-warm, run: host, command: ["true"], onFailure: warn }

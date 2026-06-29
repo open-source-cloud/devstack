@@ -30,6 +30,7 @@ type Workspace struct {
 	Groups         map[string]Group     `yaml:"groups"`         // spec 12 — workspace-level service slices
 	Secrets        Secrets              `yaml:"secrets"`
 	Network        Network              `yaml:"network"`
+	Hooks          Hooks                `yaml:"hooks"` // spec 11 — workspace-scope lifecycle hooks
 	Shared         map[string]SharedSvc `yaml:"shared" validate:"dive"`
 	Projects       []ProjectRef         `yaml:"projects" validate:"dive"`
 }
@@ -101,16 +102,54 @@ type Project struct {
 	Kind       string             `yaml:"kind" validate:"required,eq=Project"`
 	Name       string             `yaml:"name" validate:"required,dsname"`
 	Services   map[string]Service `yaml:"services" validate:"required,dive"`
+	Hooks      Hooks              `yaml:"hooks"` // spec 11 — project-scope lifecycle hooks
 }
 
 // Service is one container in a project stack.
 type Service struct {
-	Template string         `yaml:"template" validate:"required"`
-	Params   map[string]any `yaml:"params"`
-	Uses     []string       `yaml:"uses"` // consume SHARED services: workspace.shared.<name>
-	Env      Env            `yaml:"env"`
-	Ports    map[string]int `yaml:"ports"`
-	Profiles []string       `yaml:"profiles"` // spec 12 — Compose profile membership tags
+	Template    string         `yaml:"template" validate:"required"`
+	Params      map[string]any `yaml:"params"`
+	Uses        []string       `yaml:"uses"` // consume SHARED services: workspace.shared.<name>
+	Env         Env            `yaml:"env"`
+	Ports       map[string]int `yaml:"ports"`
+	Profiles    []string       `yaml:"profiles"`                  // spec 12 — Compose profile membership tags
+	Healthcheck *Healthcheck   `yaml:"healthcheck"`               // spec 10 — readiness probe (nil = none)
+	DependsOn   []DependsOn    `yaml:"dependsOn" validate:"dive"` // spec 10 — ordering edges
+}
+
+// Healthcheck declares a service's readiness probe (spec 10). It compiles to
+// BOTH a Compose-native healthcheck: block and a tool-side prober; this struct
+// is the declarative source — `internal/health` (C3b) normalizes durations to
+// time.Duration and owns the per-kind semantics. A nil *Healthcheck means the
+// service declares no check (it may still inherit one from its template).
+//
+// Duration fields (interval/timeout/startPeriod) are Compose-style strings
+// (e.g. "5s", "1m30s") validated here as parseable Go durations; they stay
+// strings because the compose lowering emits strings verbatim.
+type Healthcheck struct {
+	Kind         string   `yaml:"kind" validate:"required,oneof=tcp http https exec pg_isready redis"`
+	Port         int      `yaml:"port"`
+	Path         string   `yaml:"path"`         // http/https
+	ExpectStatus string   `yaml:"expectStatus"` // http/https; "200" or a "200-399" range
+	Host         string   `yaml:"host"`         // http/https Host header
+	Command      []string `yaml:"command"`      // exec kind: argv (exit 0 = healthy)
+	User         string   `yaml:"user"`         // pg_isready
+	DB           string   `yaml:"db"`           // pg_isready
+	Auth         string   `yaml:"auth"`         // redis (may be a secret:// ref)
+	Interval     string   `yaml:"interval" validate:"omitempty,duration"`
+	Timeout      string   `yaml:"timeout" validate:"omitempty,duration"`
+	Retries      int      `yaml:"retries"`
+	StartPeriod  string   `yaml:"startPeriod" validate:"omitempty,duration"`
+}
+
+// DependsOn is one readiness-ordering edge (spec 10). Service targets an
+// intra-project service name or a shared service ("workspace.shared.<name>").
+// Condition is "healthy" (default) or "started"; a "healthy" edge requires the
+// target to declare a healthcheck — that semantic check lives in `internal/health`
+// (generate-time, C3b/X2), not in these structural rules.
+type DependsOn struct {
+	Service   string `yaml:"service" validate:"required"`
+	Condition string `yaml:"condition" validate:"omitempty,oneof=healthy started"`
 }
 
 // Env declares the container environment. `raw`/`prefixed` are literal (with
@@ -125,6 +164,46 @@ type Env struct {
 type Import struct {
 	From string   `yaml:"from" validate:"required"`
 	Vars []string `yaml:"vars"`
+}
+
+// Hooks groups the lifecycle-hook lists by saga phase (spec 11). It attaches to
+// a Project (per-repo) and to the Workspace (whole-bootstrap); a hook targets a
+// service via Hook.Service, not by nesting under a service. Lists REPLACE on
+// overlay merge unless the YAML opts into `$merge: append` (spec 02). The
+// idempotency/ordering semantics (firstRun ledger, run:exec gating) belong to
+// `internal/hooks` (C4); these are the declarative shape only.
+type Hooks struct {
+	PreUp    []Hook `yaml:"preUp" validate:"dive"`
+	FirstRun []Hook `yaml:"firstRun" validate:"dive"`
+	PostUp   []Hook `yaml:"postUp" validate:"dive"`
+	PostPull []Hook `yaml:"postPull" validate:"dive"`
+	PreDown  []Hook `yaml:"preDown" validate:"dive"`
+}
+
+// IsZero reports whether no hooks are declared (all phase lists empty), so
+// callers can cheaply skip the hook machinery.
+func (h Hooks) IsZero() bool {
+	return len(h.PreUp) == 0 && len(h.FirstRun) == 0 && len(h.PostUp) == 0 &&
+		len(h.PostPull) == 0 && len(h.PreDown) == 0
+}
+
+// Hook is one declarative command run at a saga phase (spec 11). `run: host`
+// executes via os/exec from a documented working dir; `run: exec` shells into a
+// running service via `compose exec -T`. Command is an argv array (never
+// shell-split by us). Timeout is a Go duration string (default applied by C4).
+// `service` is required when run==exec — enforced semantically in `internal/hooks`,
+// not here, because that rule is transport-specific.
+type Hook struct {
+	Name      string            `yaml:"name" validate:"required,dsname"`
+	Run       string            `yaml:"run" validate:"required,oneof=host exec"`
+	Service   string            `yaml:"service"` // target for run:exec
+	Command   []string          `yaml:"command" validate:"required,min=1"`
+	Workdir   string            `yaml:"workdir"`
+	Env       map[string]string `yaml:"env"`
+	Timeout   string            `yaml:"timeout" validate:"omitempty,duration"`
+	Retries   int               `yaml:"retries"`
+	OnFailure string            `yaml:"onFailure" validate:"omitempty,oneof=abort warn continue"`
+	Once      bool              `yaml:"once"`
 }
 
 // Model is the assembled, validated workspace: workspace.yaml plus every

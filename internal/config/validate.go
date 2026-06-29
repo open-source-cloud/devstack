@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -23,6 +24,12 @@ func newValidator() *validator.Validate {
 	// dsname: Compose/DNS-safe identifier.
 	_ = v.RegisterValidation("dsname", func(fl validator.FieldLevel) bool {
 		return dsNameRE.MatchString(fl.Field().String())
+	})
+	// duration: a Compose-style Go duration string ("5s", "1m30s"). Paired with
+	// `omitempty` so an unset field is allowed; only non-empty values are parsed.
+	_ = v.RegisterValidation("duration", func(fl validator.FieldLevel) bool {
+		_, err := time.ParseDuration(fl.Field().String())
+		return err == nil
 	})
 	return v
 }
@@ -82,6 +89,12 @@ func describeFieldError(fe validator.FieldError) string {
 		return fmt.Sprintf("%s = %q is not a valid name (lowercase letters/digits/-/_, starting with a letter)", field, fe.Value())
 	case "eq":
 		return fmt.Sprintf("%s = %q must equal %q", field, fe.Value(), fe.Param())
+	case "oneof":
+		return fmt.Sprintf("%s = %q must be one of: %s", field, fe.Value(), strings.ReplaceAll(fe.Param(), " ", ", "))
+	case "duration":
+		return fmt.Sprintf("%s = %q is not a valid duration (e.g. \"5s\", \"1m30s\")", field, fe.Value())
+	case "min":
+		return fmt.Sprintf("%s must have at least %s element(s)", field, fe.Param())
 	default:
 		return fmt.Sprintf("%s failed %q", field, fe.Tag())
 	}

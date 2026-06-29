@@ -47,6 +47,113 @@ func TestLoadValid(t *testing.T) {
 	if dir := m.ProjectDir("api"); !strings.HasSuffix(dir, filepath.Join("services", "api")) {
 		t.Errorf("ProjectDir(api) = %q, want suffix services/api", dir)
 	}
+
+	// spec 10 — healthcheck + dependsOn parse onto the service.
+	apiSvc := api.Services["api"]
+	if apiSvc.Healthcheck == nil {
+		t.Fatal("api.api healthcheck not parsed")
+	}
+	if apiSvc.Healthcheck.Kind != "http" || apiSvc.Healthcheck.Port != 8080 {
+		t.Errorf("healthcheck = %+v, want kind=http port=8080", apiSvc.Healthcheck)
+	}
+	if apiSvc.Healthcheck.StartPeriod != "20s" || apiSvc.Healthcheck.Retries != 12 {
+		t.Errorf("healthcheck timing = %+v, want startPeriod=20s retries=12", apiSvc.Healthcheck)
+	}
+	if got := len(apiSvc.DependsOn); got != 2 {
+		t.Fatalf("api.api dependsOn = %d, want 2", got)
+	}
+	if apiSvc.DependsOn[0].Service != "workspace.shared.postgres" || apiSvc.DependsOn[0].Condition != "healthy" {
+		t.Errorf("dependsOn[0] = %+v", apiSvc.DependsOn[0])
+	}
+
+	// spec 11 — project- and workspace-scope hooks parse.
+	if got := len(api.Hooks.FirstRun); got != 1 {
+		t.Fatalf("api firstRun hooks = %d, want 1", got)
+	}
+	fr := api.Hooks.FirstRun[0]
+	if fr.Name != "migrate-and-seed" || fr.Run != "exec" || fr.Service != "api" {
+		t.Errorf("firstRun hook = %+v", fr)
+	}
+	if len(fr.Command) != 3 || fr.Timeout != "5m" || fr.Retries != 3 || fr.OnFailure != "abort" {
+		t.Errorf("firstRun hook detail = %+v", fr)
+	}
+	if m.Workspace.Hooks.IsZero() {
+		t.Error("workspace hooks should be non-empty (preUp banner)")
+	}
+	if got := len(m.Workspace.Hooks.PreUp); got != 1 || m.Workspace.Hooks.PreUp[0].Name != "banner" {
+		t.Errorf("workspace preUp = %+v, want one 'banner' hook", m.Workspace.Hooks.PreUp)
+	}
+}
+
+// projectWith wraps a services: block in the valid workspace+project envelope.
+func projectWith(services string) map[string]string {
+	return map[string]string{
+		"workspace.yaml":    sharedPGOnly,
+		"api/devstack.yaml": "apiVersion: devstack/v1\nkind: Project\nname: api\n" + services,
+	}
+}
+
+func TestHealthcheckBadKind(t *testing.T) {
+	root := writeTree(t, projectWith(`services:
+  api:
+    template: t
+    healthcheck: { kind: gopher, port: 1 }
+`))
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "Kind") {
+		t.Fatalf("want a healthcheck kind error, got %v", err)
+	}
+}
+
+func TestHealthcheckBadDuration(t *testing.T) {
+	root := writeTree(t, projectWith(`services:
+  api:
+    template: t
+    healthcheck: { kind: tcp, port: 1, interval: "5 seconds" }
+`))
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "duration") {
+		t.Fatalf("want a duration error, got %v", err)
+	}
+}
+
+func TestDependsOnBadCondition(t *testing.T) {
+	root := writeTree(t, projectWith(`services:
+  api:
+    template: t
+    dependsOn:
+      - { service: workspace.shared.postgres, condition: someday }
+`))
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "Condition") {
+		t.Fatalf("want a condition oneof error, got %v", err)
+	}
+}
+
+func TestHookBadRunTransport(t *testing.T) {
+	root := writeTree(t, projectWith(`services:
+  api: { template: t }
+hooks:
+  postUp:
+    - { name: x, run: telepathy, command: ["true"] }
+`))
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "Run") {
+		t.Fatalf("want a hook run oneof error, got %v", err)
+	}
+}
+
+func TestHookMissingCommand(t *testing.T) {
+	root := writeTree(t, projectWith(`services:
+  api: { template: t }
+hooks:
+  postUp:
+    - { name: x, run: host }
+`))
+	_, err := LoadAt(root)
+	if err == nil || !strings.Contains(err.Error(), "Command") {
+		t.Fatalf("want a missing-command error, got %v", err)
+	}
 }
 
 const sharedPGOnly = `apiVersion: devstack/v1

@@ -3,6 +3,9 @@ kind: Workspace
 name: acme
 aliases: [rq, uranus]
 profiles: { default: dev }
+hooks:
+  preUp:
+    - { name: banner, run: host, command: ["true"] }
 shared:
   postgres: { template: postgres, params: { version: "16" } }
   redis:    { template: redis,    params: { version: "7" } }
