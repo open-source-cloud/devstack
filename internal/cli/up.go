@@ -27,7 +27,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 		build       bool
 		noHooks     bool
 		noPreflight bool
-		profile     string
+		profiles    []string
 	)
 	cmd := &cobra.Command{
 		Use:   "up [project...]",
@@ -46,7 +46,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 			d.Build = build
 			d.NoHooks = noHooks
 			d.NoPreflight = noPreflight
-			d.Profile = profile
+			d.Profiles = profiles
 
 			// Self-healing reconcile before the saga (spec 09): prune ref rows for
 			// projects no longer live. Best-effort — never blocks `up`.
@@ -79,7 +79,8 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 	cmd.Flags().BoolVar(&build, "build", false, "build images before starting (compose build)")
 	cmd.Flags().BoolVar(&noHooks, "no-hooks", false, "skip lifecycle hooks")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, "skip the preflight checks")
-	cmd.Flags().StringVar(&profile, "profile", "", "env-overlay profile for ${profile}")
+	cmd.Flags().StringArrayVarP(&profiles, "profile", "p", nil,
+		"service slice(s) to start — repeatable & comma-separated (spec 12); empty → defaultProfile or all")
 	return cmd
 }
 
