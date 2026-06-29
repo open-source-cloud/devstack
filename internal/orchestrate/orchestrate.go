@@ -102,7 +102,7 @@ func (s *Saga) Run(ctx context.Context, phases []Phase) ([]Record, error) {
 		s.emit(rec)
 
 		if err != nil {
-			s.compensate(ctx, done)
+			s.compensate(ctx, &p, done)
 			return records, fmt.Errorf("phase %q failed: %w", p.Name, err)
 		}
 		if rec.Status == StatusOK && p.Mutating && p.Compensate != nil {
@@ -179,22 +179,33 @@ func (s *Saga) runBody(ctx context.Context, p Phase) (detail any, err error) {
 	return p.Run(ctx)
 }
 
-// compensate unwinds the succeeded mutating phases in reverse, clearing each
-// phase row so a re-run redoes it. A compensation error is logged, not fatal —
+// compensate unwinds mutating work after a failure. The FAILED phase's own
+// compensation runs first (it may have partially applied — e.g. compose-up
+// created some containers) but its row is KEPT as failed so `status` can surface
+// it. Then the succeeded mutating phases unwind in reverse, each with its row
+// cleared so a re-run redoes it. A compensation error is logged, not fatal —
 // best-effort cleanup must not mask the original failure.
-func (s *Saga) compensate(ctx context.Context, done []Phase) {
+func (s *Saga) compensate(ctx context.Context, failed *Phase, done []Phase) {
+	if failed != nil && failed.Mutating && failed.Compensate != nil {
+		s.runCompensation(ctx, *failed)
+	}
 	for i := len(done) - 1; i >= 0; i-- {
 		p := done[i]
-		if p.Compensate != nil {
-			if err := p.Compensate(ctx); err != nil {
-				s.DB.LogEvent("saga", s.qualified(p), "compensation failed: "+err.Error())
-			} else {
-				s.DB.LogEvent("saga", s.qualified(p), "compensated")
-			}
-		}
+		s.runCompensation(ctx, p)
 		_ = s.withLock(ctx, func() error {
 			return s.DB.ClearPhase(s.Workspace, p.Scope, p.Name)
 		})
+	}
+}
+
+func (s *Saga) runCompensation(ctx context.Context, p Phase) {
+	if p.Compensate == nil {
+		return
+	}
+	if err := p.Compensate(ctx); err != nil {
+		s.DB.LogEvent("saga", s.qualified(p), "compensation failed: "+err.Error())
+	} else {
+		s.DB.LogEvent("saga", s.qualified(p), "compensated")
 	}
 }
 
