@@ -45,3 +45,17 @@ func TestDoctorRebuildStateFlag(t *testing.T) {
 		t.Error("doctor is missing the --rebuild-state flag")
 	}
 }
+
+func TestDoctorIncludesTrustProbe(t *testing.T) {
+	var out strings.Builder
+	root := NewRootCmd(Options{})
+	root.SetArgs([]string{"doctor", "--json"})
+	root.SetOut(&out)
+	root.SetErr(&out)
+	// doctor exits non-zero only on a hard FAIL; the trust probe is a warning, so
+	// in CI (no mkcert) doctor still succeeds and the JSON lists the probe.
+	_ = root.Execute()
+	if !strings.Contains(out.String(), `"trust (mkcert)"`) {
+		t.Errorf("doctor --json missing the trust probe:\n%s", out.String())
+	}
+}
