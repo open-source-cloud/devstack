@@ -154,11 +154,29 @@ devstack shared status          # shared-service ref counts + consuming projects
 | `ws clone/sync/status/git` | ✅ | Bounded-parallel multi-repo git over the workspace. |
 | `shared status` | ✅ | Shared-service ref counts and consuming projects. |
 | `self check` / `self update` | ✅ | Version check and checksum-verified self-update. |
+| `store init/path/show` | ✅ | The global `~/.devstack` store: config + custom templates + shared defs. |
 | `alias add/remove/list` | ✅ | `argv[0]` alias symlinks (`rq`, `uranus`, …). |
 | `up` / `down` / `shell` / `logs` | 🚧 | Lifecycle saga — shared infra + provisioning + compose up (M2/M6). |
 | `secrets` / `trust` / `dns` / `tunnel` | 🚧 | Secrets (M4) and networking (M5). |
 
 Every headline command supports `--json` and `--quiet` for scripting/CI.
+
+## The global store (`~/.devstack`)
+
+`devstack store init` creates a machine-global home (override with `$DEVSTACK_HOME`)
+shared across all your workspaces:
+
+```
+~/.devstack/
+  config.yaml     # the store config: the global shared services (postgres, redis, minio/S3…)
+  templates/      # custom service templates — override the embedded built-ins by name
+  shared/         # the global shared stack's generated artifacts
+```
+
+Drop a template under `~/.devstack/templates/<name>/` to customize or add a
+service for *every* workspace — e.g. a `postgres/` there overrides the built-in
+Postgres. `devstack store show` lists the configured shared services;
+`devstack template list` shows your store templates alongside the built-ins.
 
 ## How it works
 

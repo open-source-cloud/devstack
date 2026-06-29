@@ -20,6 +20,8 @@ type TemplateSource interface {
 	Resolve(ref string) (fs.FS, error)
 	// Has reports whether the named template exists in this source.
 	Has(ref string) bool
+	// List returns the template names available in this source, sorted.
+	List() []string
 }
 
 // FSSource is a TemplateSource backed by any fs.FS whose top-level directories
@@ -136,4 +138,21 @@ func (c *ChainSource) Has(ref string) bool {
 		}
 	}
 	return false
+}
+
+// List returns the union of every member source's templates (deduplicated,
+// sorted) — so `template list` shows custom store templates alongside built-ins.
+func (c *ChainSource) List() []string {
+	seen := map[string]bool{}
+	for _, s := range c.sources {
+		for _, n := range s.List() {
+			seen[n] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }

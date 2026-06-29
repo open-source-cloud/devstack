@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -11,10 +12,15 @@ import (
 	"github.com/open-source-cloud/devstack/templates"
 )
 
-// builtinSource is the embedded built-in template source used by generation and
-// the template tooling.
+// builtinSource is the template source used by generation and the template
+// tooling: custom templates in the store (~/.devstack/templates) override the
+// embedded built-ins by name; the embedded set is always the fallback.
 func builtinSource() template.TemplateSource {
-	return template.NewFSSource(templates.FS)
+	embedded := template.NewFSSource(templates.FS)
+	if dir := userTemplatesDir(); dir != "" {
+		return template.NewChainSource(template.NewFSSource(os.DirFS(dir)), embedded)
+	}
+	return embedded
 }
 
 // newGenerateCmd wires `devstack generate` — the M1 deterministic pipeline entry

@@ -183,6 +183,12 @@ implemented and green (`make ci` + `make determinism`):
   pull/status via `--porcelain=v2 -z`, shorthand URL expansion, GIT_ASKPASS token
   shim. CLI `ws clone/sync/status/git` — bounded-parallel (errgroup), plain/JSON
   dual-mode, `--check`. Integration-tested against real temp repos.
+- `internal/selfupdate` + CLI `self check/update` — GitHub-API release resolution
+  (token-capable), SHA-256-verified, install-method-aware atomic in-place replace.
+- `internal/store` + CLI `store init/path/show` — the global `~/.devstack` home
+  (`$DEVSTACK_HOME`): `config.yaml` (global shared services), `templates/` (custom
+  templates that override built-ins by name, chained ahead of the embedded set in
+  the generate/template source), and `shared/`.
 - `internal/alias` — registry + symlink installer; `internal/version` — ldflags target.
 - CI (`.github/workflows/`: ci + release + installer + release-dryrun + determinism),
   `.goreleaser.yaml`, `Makefile`, `install.sh` (curl|sh installer). Tagged **v0.1.0**.

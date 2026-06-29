@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-source-cloud/devstack/internal/generate"
+	"github.com/open-source-cloud/devstack/internal/store"
 	"github.com/open-source-cloud/devstack/internal/template"
-	"github.com/open-source-cloud/devstack/templates"
 )
 
 // newTemplateCmd wires `devstack template list|lint|test|init` — the M1 template
@@ -35,7 +35,7 @@ func newTemplateListCmd(g *GlobalOpts) *cobra.Command {
 		Short: "List the built-in service templates",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			src := template.NewFSSource(templates.FS)
+			src := builtinSource() // store templates (if any) + embedded built-ins
 			names := src.List()
 			type item struct {
 				Name        string `json:"name"`
@@ -141,7 +141,7 @@ func newTemplateInitCmd(g *GlobalOpts) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&dir, "dir", ".", "parent directory to create the template in")
+	cmd.Flags().StringVar(&dir, "dir", store.TemplatesPath(), "parent directory to create the template in (default: the store templates dir)")
 	return cmd
 }
 
