@@ -97,6 +97,26 @@ func buildProjectService(res *graphResolver, m *config.Model, project, service s
 	if exp := exposeList(svc.Ports); len(exp) > 0 {
 		out["expose"] = exp
 	}
+
+	// spec 10 — a service-declared healthcheck overrides any template default and
+	// is lowered to a Compose-native healthcheck: block.
+	if svc.Healthcheck != nil {
+		hc, err := healthcheckBlock(svc.Healthcheck)
+		if err != nil {
+			return nil, fmt.Errorf("project %q service %q healthcheck: %w", project, service, err)
+		}
+		out["healthcheck"] = hc
+	}
+	// spec 10 — intra-project dependsOn → compose depends_on (cross-project edges
+	// are gated tool-side by the up saga, not expressible in compose).
+	dep, err := dependsOnBlock(m, project, svc.DependsOn)
+	if err != nil {
+		return nil, err
+	}
+	if len(dep) > 0 {
+		out["depends_on"] = dep
+	}
+
 	// NOTE: service-level compose `profiles:` are deliberately NOT emitted in M1.
 	// Compose disables a profiled service unless its profile is active, which would
 	// drop it from the generated document and from a plain `up`. Profile membership
