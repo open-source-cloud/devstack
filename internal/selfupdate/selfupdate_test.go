@@ -22,7 +22,9 @@ func TestIsDevBuild(t *testing.T) {
 			t.Errorf("IsDevBuild(%q) = false, want true", v)
 		}
 	}
-	rel := []string{"v0.1.0", "v1.2.3", "v0.2.0"}
+	// Valid release tags, including prereleases whose identifier merely starts
+	// with 'g' — must NOT be treated as dev builds.
+	rel := []string{"v0.1.0", "v1.2.3", "v0.2.0", "v1.0.0-rc.1", "v1.0.0-grpc.1", "v1.0.0-gke", "v1.0.0-go.1"}
 	for _, v := range rel {
 		if IsDevBuild(v) {
 			t.Errorf("IsDevBuild(%q) = true, want false", v)

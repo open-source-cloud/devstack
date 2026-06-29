@@ -15,11 +15,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
 	"golang.org/x/mod/semver"
 )
+
+// describeRe matches the `git describe` suffix (e.g. -11-gabc1234) so a real
+// release tag whose prerelease merely starts with 'g' (v1.0.0-grpc.1) is not
+// mistaken for a dev build.
+var describeRe = regexp.MustCompile(`-[0-9]+-g[0-9a-f]+`)
 
 // Repo is the GitHub repository releases are pulled from.
 const Repo = "open-source-cloud/devstack"
@@ -66,7 +72,7 @@ func Check(ctx context.Context, current string) (*CheckResult, error) {
 // `git describe` build like v0.1.0-11-gabc1234, or a -dirty tree) for which
 // semver comparison against a release tag is meaningless.
 func IsDevBuild(v string) bool {
-	return v == "" || v == "dev" || strings.Contains(v, "-g") || strings.HasSuffix(v, "-dirty") || !semver.IsValid(v)
+	return v == "" || v == "dev" || strings.HasSuffix(v, "-dirty") || describeRe.MatchString(v) || !semver.IsValid(v)
 }
 
 // LatestTag resolves the newest release tag, trying /releases/latest first and

@@ -37,12 +37,14 @@ have() { command -v "$1" >/dev/null 2>&1; }
 
 if have curl; then
 	dl() { curl -fsSL "$1"; }
-	dl_to() { curl -fsSL -o "$2" "$1"; }
-	# api adds the auth header (when a token is set) for GitHub API reads only.
+	# dl_to and api send the token when set so PRIVATE-repo asset/API access works.
+	# curl drops the Authorization header on the cross-host redirect to the asset
+	# CDN (default since 7.58), so the token never leaks to storage.
+	dl_to() { if [ -n "$TOKEN" ]; then curl -fsSL -H "Authorization: Bearer $TOKEN" -o "$2" "$1"; else curl -fsSL -o "$2" "$1"; fi; }
 	api() { if [ -n "$TOKEN" ]; then curl -fsSL -H "Authorization: Bearer $TOKEN" "$1"; else curl -fsSL "$1"; fi; }
 elif have wget; then
 	dl() { wget -qO- "$1"; }
-	dl_to() { wget -qO "$2" "$1"; }
+	dl_to() { if [ -n "$TOKEN" ]; then wget -qO "$2" --header="Authorization: Bearer $TOKEN" "$1"; else wget -qO "$2" "$1"; fi; }
 	api() { if [ -n "$TOKEN" ]; then wget -qO- --header="Authorization: Bearer $TOKEN" "$1"; else wget -qO- "$1"; fi; }
 else
 	die "need curl or wget to download devstack"

@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -128,7 +129,7 @@ func checksumFor(sums, filename string) string {
 
 // extractBinary returns the named file's bytes from a .tar.gz archive.
 func extractBinary(archive []byte, name string) ([]byte, error) {
-	gz, err := gzip.NewReader(strings.NewReader(string(archive)))
+	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, fmt.Errorf("gunzip release: %w", err)
 	}

@@ -48,6 +48,10 @@ The installer detects your OS/arch, downloads the matching archive from
 [GitHub Releases](https://github.com/open-source-cloud/devstack/releases),
 **verifies its SHA-256 checksum**, and installs to `$XDG_BIN_HOME` (or `~/.local/bin`).
 
+> **Note:** once the repository's releases are public this works with no auth.
+> While the repo is private, export a token first — e.g.
+> `export GITHUB_TOKEN="$(gh auth token)"`.
+
 <details>
 <summary>Installer options &amp; alternatives</summary>
 
@@ -65,7 +69,7 @@ DEVSTACK_ALIASES="rq uranus" \
 | `DEVSTACK_INSTALL_DIR` | `$XDG_BIN_HOME` or `~/.local/bin` | Where to install the binary. |
 | `DEVSTACK_ALIASES` | *(none)* | Space-separated `argv[0]` alias symlinks. |
 | `DEVSTACK_NO_VERIFY` | `0` | Skip checksum verification (not recommended). |
-| `GITHUB_TOKEN` / `GH_TOKEN` | *(none)* | Auth for the GitHub API (higher rate limits). |
+| `GITHUB_TOKEN` / `GH_TOKEN` | *(none)* | GitHub auth — **required while the repo is private**; also raises API rate limits. |
 
 **From source** (needs Go 1.25+): `make install` (builds a CGO-free static binary
 into `$XDG_BIN_HOME`). **Linux packages**: `.deb` / `.rpm` are attached to each release.
@@ -80,6 +84,18 @@ devstack self update    # download + checksum-verify + atomically replace in pla
 
 `self update` refuses to overwrite a Homebrew/dpkg/rpm-managed binary, printing the
 right `brew`/`apt`/`dnf` command instead.
+
+### Uninstall
+
+```bash
+rm "$(command -v devstack)"                       # remove the binary
+rm -f "$HOME/.local/bin/rq" "$HOME/.local/bin/uranus"   # remove any argv[0] alias symlinks you added
+```
+
+From a source install, `make uninstall` removes the binary. Machine-global state
+(the SQLite ledger, alias registry, template cache) lives under your XDG data/
+config/cache dirs (`~/.local/share/devstack`, `~/.config/devstack`, …); a managed
+teardown (`workspace destroy`) is on the roadmap.
 
 ## Quickstart
 
