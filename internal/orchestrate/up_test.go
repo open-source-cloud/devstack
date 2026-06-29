@@ -145,7 +145,7 @@ func TestBuildUpHappyPath(t *testing.T) {
 	for _, r := range recs {
 		got[r.Phase+scopeSuffix(r.Scope)] = r.Status
 	}
-	for _, want := range []string{"preflight", "network", "generate", "shared", "compose-up@app", "hooks@app"} {
+	for _, want := range []string{"preflight", "network", "generate", "shared", "compose-up@app", "postUp@app"} {
 		if got[want] != StatusOK {
 			t.Errorf("phase %q = %q, want ok (all: %+v)", want, got[want], got)
 		}
@@ -178,7 +178,7 @@ func TestBuildUpHappyPath(t *testing.T) {
 	}
 	for _, r := range recs2 {
 		switch r.Phase {
-		case "preflight", "secrets", "hooks": // AlwaysRun phases
+		case "preflight", "secrets", "preUp", "postUp": // AlwaysRun phases
 			if r.Status != StatusOK {
 				t.Errorf("%s should re-run ok, got %q", r.Phase, r.Status)
 			}
@@ -312,5 +312,54 @@ func TestBuildUpInjectsSecretEnv(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("compose-up env should carry DB_PASSWORD=resolved-pw, got %v", env)
+	}
+}
+
+func TestBuildUpHookOrdering(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("workspace.yaml", "apiVersion: devstack/v1\nkind: Workspace\nname: demo\nhooks:\n  preUp:\n    - { name: ws-banner, run: host, command: [\"true\"] }\nprojects:\n  - { name: app, path: app }\n")
+	write("app/devstack.yaml", "apiVersion: devstack/v1\nkind: Project\nname: app\nservices:\n  web: { template: node.vite }\nhooks:\n  preUp:\n    - { name: migrate, run: host, command: [\"true\"] }\n")
+
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, _ := state.Open(context.Background(), filepath.Join(root, "state"), "ctx")
+	t.Cleanup(func() { db.Close() })
+	mc := &docker.MockClient{}
+	src := template.NewFSSource(templates.FS)
+	lockPath := filepath.Join(root, "lock")
+	d := UpDeps{
+		Model: m, DB: db, Docker: mc,
+		Manager: &workspace.Manager{Model: m, DB: db, Docker: mc, Source: src, LockPath: lockPath},
+		Source:  src, LockPath: lockPath, Runner: &fakeRunner{}, Env: map[string]string{},
+	}
+	phases, err := BuildUp(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saga := &Saga{Workspace: "demo", DB: db, LockPath: lockPath}
+	recs, err := saga.Run(context.Background(), phases)
+	if err != nil {
+		t.Fatalf("saga: %v", err)
+	}
+	// Record the order of the phases we care about.
+	idx := map[string]int{}
+	for i, r := range recs {
+		idx[r.Phase+scopeSuffix(r.Scope)] = i
+	}
+	// workspace preUp ("preUp", no scope) before project preUp before compose-up.
+	if !(idx["preUp"] < idx["preUp@app"] && idx["preUp@app"] < idx["compose-up@app"]) {
+		t.Errorf("hook ordering wrong: ws-preUp=%d app-preUp=%d compose-up=%d",
+			idx["preUp"], idx["preUp@app"], idx["compose-up@app"])
 	}
 }

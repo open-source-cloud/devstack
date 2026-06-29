@@ -92,13 +92,22 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		secretsPhase(d, projects, secretEnv),
 		sharedPhase(d, projects),
 	)
+	// Hook ordering (spec 11): workspace preUp → per-project (preUp → compose-up →
+	// postUp) → workspace postUp.
+	if !d.NoHooks {
+		phases = append(phases, hookPhase(d, "", "preUp", d.Model.Workspace.Hooks.PreUp, hooks.OnAbort))
+	}
 	for _, p := range projects {
+		if !d.NoHooks {
+			phases = append(phases, hookPhase(d, p, "preUp", d.Model.Projects[p].Hooks.PreUp, hooks.OnAbort))
+		}
 		phases = append(phases, composeUpPhase(d, p, secretEnv))
+		if !d.NoHooks {
+			phases = append(phases, hookPhase(d, p, "postUp", d.Model.Projects[p].Hooks.PostUp, hooks.OnAbort))
+		}
 	}
 	if !d.NoHooks {
-		for _, p := range projects {
-			phases = append(phases, hooksPhase(d, p))
-		}
+		phases = append(phases, hookPhase(d, "", "postUp", d.Model.Workspace.Hooks.PostUp, hooks.OnAbort))
 	}
 	return phases, nil
 }
@@ -364,28 +373,37 @@ func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string) Pha
 
 // hooksPhase runs a project's postUp hooks (unconditional). firstRun/postPull
 // (idempotent, ledger-keyed) arrive with provision/git wiring.
-func hooksPhase(d UpDeps, project string) Phase {
+// hookPhase runs one lifecycle-hook list at a saga phase boundary (spec 11).
+// scope is a project name, or "" for workspace-scope hooks (run from the
+// workspace root with no compose project). Empty lists are a no-op.
+func hookPhase(d UpDeps, scope, phaseName string, hookList []config.Hook, onFail string) Phase {
 	return Phase{
-		Name:      "hooks",
-		Scope:     project,
+		Name:      phaseName, // preUp | postUp
+		Scope:     scope,
 		AlwaysRun: true,
 		Run: func(ctx context.Context) (any, error) {
-			p := d.Model.Projects[project]
-			if len(p.Hooks.PostUp) == 0 {
+			if len(hookList) == 0 {
 				return map[string]any{"ran": 0}, nil
 			}
-			outDir := filepath.Join(d.Model.ProjectDir(project), generate.GenDir)
-			runner := &hooks.Runner{
-				Execer: hooks.OSExecer{
-					BaseDir: d.Model.ProjectDir(project),
-					Project: "devstack-" + project,
+			var ex hooks.Execer
+			ledgerProject := scope
+			if scope == "" {
+				ex = hooks.OSExecer{BaseDir: d.Model.Root}
+				ledgerProject = "workspace"
+			} else {
+				outDir := filepath.Join(d.Model.ProjectDir(scope), generate.GenDir)
+				ex = hooks.OSExecer{
+					BaseDir: d.Model.ProjectDir(scope),
+					Project: "devstack-" + scope,
 					File:    filepath.Join(outDir, generate.ComposeFile),
-				},
-				Ledger: d.DB,
-				Lock:   func(ctx context.Context, fn func() error) error { return lock.WithLock(ctx, d.LockPath, fn) },
+				}
 			}
-			results, err := runner.RunPhase(ctx, p.Hooks.PostUp, hooks.PhaseOpts{
-				Project: project, Phase: "postUp", DefaultOnFailure: hooks.OnAbort,
+			runner := &hooks.Runner{
+				Execer: ex, Ledger: d.DB,
+				Lock: func(ctx context.Context, fn func() error) error { return lock.WithLock(ctx, d.LockPath, fn) },
+			}
+			results, err := runner.RunPhase(ctx, hookList, hooks.PhaseOpts{
+				Project: ledgerProject, Phase: phaseName, DefaultOnFailure: onFail,
 			})
 			if err != nil {
 				return map[string]any{"results": results}, err
