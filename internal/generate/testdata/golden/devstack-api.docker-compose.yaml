@@ -23,6 +23,18 @@ services:
       XDEBUG_MODE: "off"
     expose:
       - "8080"
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - -o
+        - /dev/null
+        - http://localhost:8080/healthz
+      timeout: 3s
+      interval: 5s
+      retries: 12
+      start_period: 20s
     labels:
       com.devstack.managed: "true"
       com.devstack.project: api
