@@ -65,6 +65,43 @@ func Resolve(m *config.Model, requested []string) Active {
 	return out
 }
 
+// ServiceMem is one active service's declared memory hint (spec 12/18).
+type ServiceMem struct {
+	Project  string `json:"project"`
+	Service  string `json:"service"`
+	MemoryMB int    `json:"memoryMB"`
+}
+
+// Budget is the result of checking the active set against the workspace memory
+// budget (spec 12 §budget). Over is false whenever no budget is configured.
+type Budget struct {
+	BudgetMB int          `json:"budgetMB"` // workspace.memoryBudgetMB (0 → no check)
+	TotalMB  int          `json:"totalMB"`  // sum of active services' memoryMB
+	Over     bool         `json:"over"`     // TotalMB > BudgetMB (only when BudgetMB > 0)
+	Services []ServiceMem `json:"services"` // active services that declared a memoryMB, sorted
+}
+
+// CheckBudget sums the active services' declared memoryMB and compares it to the
+// workspace memoryBudgetMB. With no budget configured (0), it never reports Over —
+// the check is opt-in (spec 12 acceptance). Services with no memoryMB contribute
+// nothing and are omitted from the breakdown.
+func CheckBudget(m *config.Model, a Active) Budget {
+	b := Budget{BudgetMB: m.Workspace.MemoryBudgetMB}
+	for _, project := range sortedKeys(a.Services) {
+		p := m.Projects[project]
+		for _, sname := range a.Services[project] {
+			mb := p.Services[sname].MemoryMB
+			if mb <= 0 {
+				continue
+			}
+			b.TotalMB += mb
+			b.Services = append(b.Services, ServiceMem{Project: project, Service: sname, MemoryMB: mb})
+		}
+	}
+	b.Over = b.BudgetMB > 0 && b.TotalMB > b.BudgetMB
+	return b
+}
+
 // serviceActive reports whether a service is in any active group or carries an
 // active profile tag.
 func serviceActive(m *config.Model, profiles map[string]bool, svc config.Service, sname string) bool {
