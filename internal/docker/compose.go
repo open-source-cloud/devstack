@@ -84,6 +84,11 @@ func NewCompose(project, file, dir string) *Compose {
 }
 
 func (c *Compose) base() []string {
+	// File is optional for label-driven verbs (down/stop discover the stack from
+	// the project name's container labels); up/build require it.
+	if c.File == "" {
+		return []string{"compose", "-p", c.Project}
+	}
 	return []string{"compose", "-p", c.Project, "-f", c.File}
 }
 
