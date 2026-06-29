@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/spf13/cobra"
 
@@ -24,10 +25,80 @@ func newSharedCmd(g *GlobalOpts) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newSharedStatusCmd(g),
-		stub("gc", "Reclaim unused shared services", "M2 (up saga)"),
-		stub("doctor", "Reconcile the ledger against live containers", "M2 (up saga)"),
+		newSharedGcCmd(g),
+		newSharedDoctorCmd(g),
 	)
 	return cmd
+}
+
+// newSharedGcCmd wires `shared gc [--stop]` — find shared services at zero refs
+// and (with --stop) stop them. Default is a dry-run report: warm DBs are cheap,
+// so reclamation is opt-in (spec 03/09). Volumes are never touched.
+func newSharedGcCmd(g *GlobalOpts) *cobra.Command {
+	var stop bool
+	cmd := &cobra.Command{
+		Use:   "gc",
+		Short: "Report (or with --stop, stop) shared services at zero references",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			mgr, closeFn, err := buildManager(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			res, err := mgr.GC(cmd.Context(), stop)
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, res)
+			}
+			w := cmd.OutOrStdout()
+			if len(res.Candidates) == 0 {
+				fmt.Fprintln(w, "no shared services at zero references")
+				return nil
+			}
+			for _, c := range res.Candidates {
+				if slices.Contains(res.Stopped, c) {
+					fmt.Fprintf(w, "stopped %s\n", c)
+				} else if stop {
+					fmt.Fprintf(w, "%s (zero refs, left running)\n", c)
+				} else {
+					fmt.Fprintf(w, "%s (zero refs — run `shared gc --stop` to stop)\n", c)
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&stop, "stop", false, "actually stop the zero-ref services (default: report only)")
+	return cmd
+}
+
+// newSharedDoctorCmd wires `shared doctor` — the self-healing reconcile: prune
+// ref rows for projects no longer live (the count is derived from reality).
+func newSharedDoctorCmd(g *GlobalOpts) *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Reconcile the ledger against live containers (prune dead refs)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			mgr, closeFn, err := buildManager(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			pruned, err := mgr.Reconcile(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, map[string]any{"pruned": pruned})
+			}
+			w := cmd.OutOrStdout()
+			fmt.Fprintf(w, "reconciled: pruned %d stale ref row(s)\n", len(pruned))
+			return nil
+		},
+	}
 }
 
 func newSharedStatusCmd(g *GlobalOpts) *cobra.Command {
