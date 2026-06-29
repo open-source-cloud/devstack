@@ -11,30 +11,45 @@ import (
 	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/generate"
+	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
 	"github.com/open-source-cloud/devstack/internal/workspace"
 	"github.com/open-source-cloud/devstack/templates"
 )
 
-// fakeRunner records compose invocations and can fail selectively.
+// fakeRunner records compose invocations (with their injected env) and can fail
+// selectively.
 type fakeRunner struct {
 	cmds [][]string
+	envs [][]string // env passed alongside each cmd (same index)
 	fail func(args []string) bool
 }
 
-func (f *fakeRunner) record(name string, args []string) error {
+func (f *fakeRunner) record(env []string, name string, args []string) error {
 	f.cmds = append(f.cmds, append([]string{name}, args...))
+	f.envs = append(f.envs, env)
 	if f.fail != nil && f.fail(args) {
 		return errors.New("compose failed")
 	}
 	return nil
 }
-func (f *fakeRunner) Run(_ context.Context, _ []string, _, name string, args ...string) error {
-	return f.record(name, args)
+func (f *fakeRunner) Run(_ context.Context, env []string, _, name string, args ...string) error {
+	return f.record(env, name, args)
 }
-func (f *fakeRunner) Output(_ context.Context, _ []string, _, name string, args ...string) ([]byte, error) {
-	return nil, f.record(name, args)
+func (f *fakeRunner) Output(_ context.Context, env []string, _, name string, args ...string) ([]byte, error) {
+	return nil, f.record(env, name, args)
+}
+
+// envForUp returns the env injected for a project's compose up (or nil).
+func (f *fakeRunner) envForUp(project string) []string {
+	for i, c := range f.cmds {
+		joined := strings.Join(c, " ")
+		if strings.Contains(joined, "-p "+project) && strings.Contains(joined, " up ") {
+			return f.envs[i]
+		}
+	}
+	return nil
 }
 func (f *fakeRunner) sawUp(project string) bool {
 	for _, c := range f.cmds {
@@ -163,7 +178,7 @@ func TestBuildUpHappyPath(t *testing.T) {
 	}
 	for _, r := range recs2 {
 		switch r.Phase {
-		case "preflight", "hooks":
+		case "preflight", "secrets", "hooks": // AlwaysRun phases
 			if r.Status != StatusOK {
 				t.Errorf("%s should re-run ok, got %q", r.Phase, r.Status)
 			}
@@ -224,4 +239,78 @@ func scopeSuffix(scope string) string {
 		return ""
 	}
 	return "@" + scope
+}
+
+// fakeSecretProvider resolves any ref to a fixed value (S6 injection test).
+type fakeSecretProvider struct{ val string }
+
+func (fakeSecretProvider) Name() string { return "fake" }
+func (p fakeSecretProvider) Resolve(_ context.Context, refs []secrets.Ref) (map[string]string, error) {
+	out := map[string]string{}
+	for _, r := range refs {
+		out[r.Raw] = p.val
+	}
+	return out, nil
+}
+
+func TestBuildUpInjectsSecretEnv(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("workspace.yaml", "apiVersion: devstack/v1\nkind: Workspace\nname: demo\nprojects:\n  - { name: app, path: app }\n")
+	write("app/devstack.yaml", "apiVersion: devstack/v1\nkind: Project\nname: app\nservices:\n  web:\n    template: node.vite\n    env:\n      raw: { DB_PASSWORD: \"secret://vault/f#k\" }\n")
+
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	db, err := state.Open(context.Background(), filepath.Join(root, "state"), "ctx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	mc := &docker.MockClient{}
+	src := template.NewFSSource(templates.FS)
+	lockPath := filepath.Join(root, "lock")
+	fr := &fakeRunner{}
+
+	// Inject a registry whose provider resolves the ref to a known value.
+	reg := secrets.NewRegistry()
+	reg.RegisterFactory("fake", func(secrets.ProviderConfig) (secrets.Provider, error) {
+		return fakeSecretProvider{val: "resolved-pw"}, nil
+	})
+	reg.Configure(secrets.ProviderConfig{Name: "vault", Kind: "fake"})
+
+	d := UpDeps{
+		Model: m, DB: db, Docker: mc,
+		Manager: &workspace.Manager{Model: m, DB: db, Docker: mc, Source: src, LockPath: lockPath},
+		Source:  src, LockPath: lockPath, Runner: fr, Env: map[string]string{},
+		Secrets: reg,
+	}
+	phases, err := BuildUp(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saga := &Saga{Workspace: m.Workspace.Name, DB: db, LockPath: lockPath}
+	if _, err := saga.Run(context.Background(), phases); err != nil {
+		t.Fatalf("saga: %v", err)
+	}
+	// The resolved secret reaches compose up via its process env — and only there.
+	env := fr.envForUp("devstack-app")
+	found := false
+	for _, kv := range env {
+		if kv == "DB_PASSWORD=resolved-pw" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("compose-up env should carry DB_PASSWORD=resolved-pw, got %v", env)
+	}
 }

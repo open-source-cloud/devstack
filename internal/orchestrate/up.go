@@ -14,6 +14,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/health"
 	"github.com/open-source-cloud/devstack/internal/hooks"
 	"github.com/open-source-cloud/devstack/internal/lock"
+	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
 	"github.com/open-source-cloud/devstack/internal/workspace"
@@ -46,6 +47,9 @@ type UpDeps struct {
 	Env      map[string]string // generate env (nil → process env, via generate default)
 	Profile  string
 	Projects []string // explicit subset; empty → every project in the workspace
+	// Secrets resolves secret:// refs; nil → built from workspace.secrets.providers
+	// with the built-in factories (SOPS+age). Injected for tests.
+	Secrets *secrets.Registry
 
 	Build         bool          // compose up --build
 	NoHooks       bool          // skip the hooks phase
@@ -73,6 +77,11 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		return nil, err
 	}
 
+	// Resolved secret env per project, shared between the secrets phase (writes)
+	// and each compose-up phase (reads). Values live only here + in the child
+	// process env — never on disk.
+	secretEnv := map[string][]string{}
+
 	var phases []Phase
 	if !d.NoPreflight {
 		phases = append(phases, preflightPhase(d))
@@ -80,10 +89,11 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 	phases = append(phases,
 		networkPhase(d),
 		generatePhase(d, gen),
+		secretsPhase(d, projects, secretEnv),
 		sharedPhase(d, projects),
 	)
 	for _, p := range projects {
-		phases = append(phases, composeUpPhase(d, p))
+		phases = append(phases, composeUpPhase(d, p, secretEnv))
 	}
 	if !d.NoHooks {
 		for _, p := range projects {
@@ -91,6 +101,76 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		}
 	}
 	return phases, nil
+}
+
+// secretsPhase resolves every secret:// ref the requested projects reference and
+// stashes the resolved KEY=VALUE env per project (spec 04 §6). It ALWAYS runs
+// (never cached — values stay in memory) and mutates nothing global, so it has no
+// compensation. A nil Secrets registry with no secret refs is a no-op; refs with
+// no registry is a clear error.
+func secretsPhase(d UpDeps, projects []string, out map[string][]string) Phase {
+	return Phase{
+		Name:      "secrets",
+		AlwaysRun: true,
+		Run: func(ctx context.Context) (any, error) {
+			total := 0
+			for _, p := range projects {
+				keyRefs := generate.SecretRefs(d.Model, p)
+				if len(keyRefs) == 0 {
+					continue
+				}
+				reg, err := d.secretRegistry()
+				if err != nil {
+					return nil, err
+				}
+				raws := make([]string, 0, len(keyRefs))
+				for _, raw := range keyRefs {
+					raws = append(raws, raw)
+				}
+				refs, err := secrets.Collect(raws...)
+				if err != nil {
+					return nil, err
+				}
+				resolved, err := secrets.Resolve(ctx, reg, refs)
+				if err != nil {
+					return nil, fmt.Errorf("resolve secrets for %s: %w", p, err)
+				}
+				env := make([]string, 0, len(keyRefs))
+				for _, key := range sortedStringKeys(keyRefs) {
+					env = append(env, key+"="+resolved[keyRefs[key]])
+				}
+				out[p] = env
+				total += len(env)
+			}
+			return map[string]any{"resolved": total}, nil
+		},
+	}
+}
+
+// secretRegistry returns the injected registry, or builds one from the
+// workspace's declared providers with the built-in factories (SOPS+age).
+func (d UpDeps) secretRegistry() (*secrets.Registry, error) {
+	if d.Secrets != nil {
+		return d.Secrets, nil
+	}
+	reg := secrets.NewRegistry()
+	secrets.RegisterBuiltins(reg)
+	for _, pr := range d.Model.Workspace.Secrets.Providers {
+		reg.Configure(secrets.ProviderConfig{
+			Name: pr.Name, Kind: pr.Kind, Env: pr.Env,
+			ProjectID: pr.ProjectID, Region: pr.Region,
+		})
+	}
+	return reg, nil
+}
+
+func sortedStringKeys(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // preflight — daemon reachable (critical). The full doctor matrix is X6.
@@ -243,13 +323,17 @@ func gateShared(ctx context.Context, d UpDeps, names []string) ([]map[string]any
 
 // composeUpPhase brings one project stack up. Compensation tears it back down
 // (idempotent) — refs are owned by the shared phase, not unwound here.
-func composeUpPhase(d UpDeps, project string) Phase {
+func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string) Phase {
 	outDir := filepath.Join(d.Model.ProjectDir(project), generate.GenDir)
 	cp := func() docker.Compose {
 		return docker.Compose{
 			Project: "devstack-" + project,
 			File:    filepath.Join(outDir, generate.ComposeFile),
 			Dir:     outDir, Runner: d.Runner,
+			// Resolved secret values reach the containers ONLY here, via the
+			// compose-up process env (Compose substitutes the valueless keys); they
+			// are never written to a file (§7.5).
+			Env: secretEnv[project],
 		}
 	}
 	return Phase{
