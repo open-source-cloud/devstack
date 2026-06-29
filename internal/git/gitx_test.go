@@ -44,7 +44,13 @@ func run(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	// Inject a commit identity via env so commits succeed even on a CI runner
+	// with no global git identity (a clone does not inherit repo-local config).
+	cmd.Env = append(os.Environ(),
+		"GIT_TERMINAL_PROMPT=0", "LC_ALL=C",
+		"GIT_AUTHOR_NAME=Tester", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=Tester", "GIT_COMMITTER_EMAIL=t@example.com",
+	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
@@ -127,6 +133,11 @@ func TestStatusAheadBehind(t *testing.T) {
 	if err := g.Clone(ctx, origin, clone, CloneOptions{}); err != nil {
 		t.Fatal(err)
 	}
+	// A clone does not inherit the origin's repo-local identity, and CI runners
+	// have no global identity — configure it so the commit below succeeds.
+	run(t, clone, "config", "user.email", "t@example.com")
+	run(t, clone, "config", "user.name", "Tester")
+	run(t, clone, "config", "commit.gpgsign", "false")
 	// Commit locally → ahead by 1.
 	os.WriteFile(filepath.Join(clone, "f.txt"), []byte("y"), 0o644)
 	run(t, clone, "add", "-A")
