@@ -66,14 +66,20 @@ func Open(ctx context.Context, dir, dockerContext string) (*DB, error) {
 	// A single open connection keeps pragma state consistent and means the
 	// backup checkpoint cannot race a second writer.
 	sqlDB.SetMaxOpenConns(1)
-	if err := sqlDB.Ping(); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("ping state.db: %w", err)
-	}
 
 	db := &DB{DB: sqlDB, Ctx: dockerContext, path: path}
 	lockPath := filepath.Join(xdg.RuntimeDir(), "devstack.lock")
 	if err := lock.WithLock(ctx, lockPath, func() error {
+		// Ping forces the first real connection, which applies the DSN pragmas —
+		// including the journal_mode=WAL switch that writes the DB header. That
+		// conversion takes a write lock, so it MUST run inside the flock: concurrent
+		// first-opens racing the WAL switch otherwise hit SQLITE_BUSY immediately
+		// (busy_timeout doesn't cover the journal-mode change). Keeping Ping +
+		// migrate + ensureContext together under the lock serializes the whole
+		// mutating section across processes (spec 08).
+		if err := sqlDB.Ping(); err != nil {
+			return fmt.Errorf("ping state.db: %w", err)
+		}
 		if err := db.migrate(); err != nil {
 			return err
 		}
