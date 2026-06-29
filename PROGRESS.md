@@ -19,7 +19,7 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 ## Frontier
 
 ### M2-remainder (core saga)
-- [ ] C1  state v2 `saga_phase` table + CRUD — TODO  *(kickoff)*
+- [x] C1  state v2 `saga_phase` table + CRUD — REVIEW (PR `nightly/C1`)
 - [ ] C2  docker `ContainerInspect`/`ContainerLogs` + mock — TODO  *(kickoff)*
 - [ ] C3a config `healthcheck:`/`hooks:` structs — TODO  *(kickoff)*
 - [ ] C3b `internal/health` thin poller — BLOCKED (C2, C3a)

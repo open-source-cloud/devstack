@@ -13,6 +13,7 @@ type migration struct {
 // or remove a released one.
 var migrations = []migration{
 	{version: 1, stmt: schemaV1},
+	{version: 2, stmt: schemaV2},
 }
 
 // schemaV1 is the initial ledger (spec 08 §Tables). Every mutable row is scoped
@@ -91,6 +92,25 @@ CREATE INDEX IF NOT EXISTS idx_event_log_ctx_ts ON event_log(ctx, ts);
 CREATE TABLE IF NOT EXISTS schema_version (
     version    INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+`
+
+// schemaV2 (spec 08 §saga_phase) adds the up-saga resumability table: one row per
+// (workspace, scope, phase) recording its status + an input fingerprint, so a
+// re-run skips satisfied phases and a crash mid-saga resumes deterministically.
+const schemaV2 = `
+CREATE TABLE IF NOT EXISTS saga_phase (
+    ctx          TEXT NOT NULL,
+    workspace    TEXT NOT NULL,
+    scope        TEXT NOT NULL DEFAULT '',   -- '' = workspace-wide, else project name
+    phase        TEXT NOT NULL,              -- preflight|clone|network|shared|provision|secrets|generate|compose-up|hooks|...
+    status       TEXT NOT NULL,              -- pending|started|satisfied|failed
+    fingerprint  TEXT NOT NULL DEFAULT '',   -- SHA-256 of the phase's inputs
+    started_at   TEXT,
+    satisfied_at TEXT,
+    error        TEXT,
+    PRIMARY KEY (ctx, workspace, scope, phase),
+    FOREIGN KEY (ctx) REFERENCES docker_context(name) ON DELETE CASCADE
 );
 `
 
