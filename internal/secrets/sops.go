@@ -52,6 +52,8 @@ func SopsFactory(cfg ProviderConfig) (Provider, error) {
 // SOPS+age) on a registry. AWS/Infisical register additively in S3/S4.
 func RegisterBuiltins(reg *Registry) {
 	reg.RegisterFactory(SopsKind, SopsFactory)
+	reg.RegisterFactory(AWSSecretsManagerKind, AWSFactory)
+	reg.RegisterFactory(AWSSSMKind, AWSFactory)
 }
 
 func (p *SopsProvider) Name() string { return p.name }
