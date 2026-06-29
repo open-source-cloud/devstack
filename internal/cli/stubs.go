@@ -33,8 +33,5 @@ func addStubCommands(root *cobra.Command, _ *GlobalOpts) {
 		stub("shell", "Open a shell in a service container", "M2"),
 		stub("logs", "Stream service logs", "M2"),
 		stub("import", "Import an old devdock project.yaml into workspace.yaml + devstack.yaml", "M1"),
-		stub("workspace", "Workspace-level lifecycle", "M6",
-			stub("destroy", "Reverse ALL machine-global artifacts for this workspace", "M6"),
-		),
 	)
 }

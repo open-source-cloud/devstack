@@ -70,7 +70,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [x] X2 `internal/health` full DAG — **DONE** (PR #37: BuildGraph/Cycle/Waves/RequireHealthchecks)
 - [~] X3 hooks full — **PARTIAL**: workspace + project preUp/postUp wired into the saga (PR #46). Remaining: firstRun/postPull (need provision scope_key) + --skip-hooks/--force-hooks flags.
 - [x] X4 profiles/selective-up — **DONE** (PR #53: internal/profile.Resolve — Q-PROFILE resolved). Saga --profile wiring is X5.
-- [ ] X5 orchestrate completion — TODO  *(ready: X2,X3,X4 in; wire profile slicing + DAG-pruned health into the saga)*
+- [x] X5 orchestrate completion — **DONE** (PR #55: `up --profile` service-slicing wired into BuildUp — inactive projects drop out, compose-up restricted to active services, shared phase + health gate pruned to `active.Shared`). Follow-ups (small): spec-native `COMPOSE_PROFILES`/`profiles:` emission, `memoryBudgetMB` warning.
 - [x] X6 `internal/doctor` full matrix + `--fix` — **DONE** (trust/dns/shared probes PRs #33/#35/#48 + safe reconcile `--fix` PR #49)
 - [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (S5,X6)
 - [x] X8 self-update notifier — **DONE** (PR #25, `28c4a78`)
