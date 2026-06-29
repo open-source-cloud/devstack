@@ -3,6 +3,7 @@ package generate
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/goccy/go-yaml"
 
 	"github.com/open-source-cloud/devstack/internal/config"
+	"github.com/open-source-cloud/devstack/internal/proxy"
 	"github.com/open-source-cloud/devstack/internal/template"
 )
 
@@ -92,7 +94,12 @@ func buildProjectService(res *graphResolver, m *config.Model, project, service s
 	}
 
 	out["networks"] = map[string]any{"default": nil, SharedNetwork: nil}
-	out["labels"] = b.labels(map[string]string{LabelProject: project, LabelService: service})
+	svcLabels := map[string]string{LabelProject: project, LabelService: service}
+	// spec 05 — when a reverse proxy is configured, emit the caddy-docker-proxy
+	// route labels onto the service so adding/removing it reloads Caddy with no
+	// central-config edit. No-op (nil) when the proxy is disabled.
+	maps.Copy(svcLabels, proxy.LabelsForService(m, project, service))
+	out["labels"] = b.labels(svcLabels)
 
 	if exp := exposeList(svc.Ports); len(exp) > 0 {
 		out["expose"] = exp
