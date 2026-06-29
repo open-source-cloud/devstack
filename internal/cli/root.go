@@ -70,6 +70,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newTemplateCmd(g),
 		newSharedCmd(g),
 		newWsCmd(g),
+		newSelfCmd(g),
 		newAliasCmd(g),
 		newVersionCmd(),
 	)

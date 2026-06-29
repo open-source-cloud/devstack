@@ -14,6 +14,7 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/moby/moby/client v0.4.1
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/mod v0.37.0
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.44.0
 	modernc.org/sqlite v1.52.0
