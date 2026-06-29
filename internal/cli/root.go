@@ -92,6 +92,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newWsCmd(g),
 		newWorkspaceCmd(g),
 		newUninstallCmd(g),
+		newImportCmd(g),
 		newSelfCmd(g),
 		newStoreCmd(g),
 		newAliasCmd(g),
