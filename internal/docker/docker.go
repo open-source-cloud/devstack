@@ -46,9 +46,54 @@ type Client interface {
 	// All=true (so stopped containers are visible) and compose one-offs excluded
 	// (DECISIONS D5) — the basis for ref-count reconciliation from live reality.
 	ListManaged(ctx context.Context, labels map[string]string) ([]Container, error)
+	// ContainerInspect returns the read-only health/state projection for one
+	// container, keyed by ID or name. This is the tool-side readiness signal the
+	// health poller and the up saga gate on (.State.Health.Status); it never
+	// mutates anything, so it stays outside the flock (spec 10, ARCHITECTURE §4).
+	ContainerInspect(ctx context.Context, id string) (ContainerDetails, error)
+	// ContainerLogs returns up to `tail` trailing lines of a container's combined
+	// stdout+stderr (tail<=0 means all) — the fail-fast diagnostic inlined when a
+	// dependency goes unhealthy or exits during `up` (spec 10). Read-only.
+	ContainerLogs(ctx context.Context, id string, tail int) (string, error)
 	// Close releases the underlying connection.
 	Close() error
 }
+
+// HealthStatus mirrors Docker's .State.Health.Status. The empty string means the
+// container declares no healthcheck at all (inspect reports a nil Health block);
+// `none` can also appear via the list API. Both mean "no health signal" — use
+// HasHealthcheck rather than comparing to a single sentinel.
+type HealthStatus string
+
+// Docker's exact health states (spec 10 §gotchas).
+const (
+	HealthNone      HealthStatus = "none"      // no healthcheck declared
+	HealthStarting  HealthStatus = "starting"  // check running, not yet ready
+	HealthHealthy   HealthStatus = "healthy"   // check passing
+	HealthUnhealthy HealthStatus = "unhealthy" // check failing
+)
+
+// ContainerDetails is the read-only projection ContainerInspect returns: just
+// enough state for the health gate and saga compensation, nothing that would
+// tempt a write (ARCHITECTURE §4 keeps the SDK strictly read-only).
+type ContainerDetails struct {
+	ID       string
+	Name     string // primary name, leading slash stripped
+	Labels   map[string]string
+	State    string       // created|running|paused|restarting|removing|exited|dead
+	Running  bool         // .State.Running
+	ExitCode int          // .State.ExitCode (meaningful once exited)
+	Health   HealthStatus // "" when the container has no Health block
+}
+
+// HasHealthcheck reports whether the container declares a healthcheck (so its
+// Health status is a meaningful gate, not just "running").
+func (d ContainerDetails) HasHealthcheck() bool {
+	return d.Health != "" && d.Health != HealthNone
+}
+
+// Healthy reports whether the container has a healthcheck that is passing.
+func (d ContainerDetails) Healthy() bool { return d.Health == HealthHealthy }
 
 // Container is the read-only projection of a container devstack cares about.
 type Container struct {
