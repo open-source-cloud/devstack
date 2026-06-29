@@ -66,13 +66,13 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [ ] N5 saga trust/proxy phase + doctor probes — TODO  *(ready: N1–N4,C5 all in; wire proxy labels into generate + a saga trust phase)*
 
 ### M6 (saga completion + glue)
-- [ ] X1 config completion — TODO
-- [ ] X2 `internal/health` full DAG — BLOCKED (X1,C3b)
-- [ ] X3 hooks full — BLOCKED (X1,C4)
-- [ ] X4 profiles/selective-up — BLOCKED (X1,X2)
+- [x] X1 config completion — **DONE** (PR #27, `1c77d44`)
+- [ ] X2 `internal/health` full DAG — TODO  *(ready: X1,C3b in)*
+- [ ] X3 hooks full — TODO  *(ready: X1,C4 in)*
+- [ ] X4 profiles/selective-up — TODO  *(ready once X2 lands; X1 in)*
 - [ ] X5 orchestrate completion — BLOCKED (X2,X3,X4)
-- [ ] X6 `internal/doctor` full matrix + `--fix` — BLOCKED (C8,N2,N3)
-- [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (N2,N3,S5,X6)
+- [ ] X6 `internal/doctor` full matrix + `--fix` — TODO  *(ready: C8,N2,N3 in)*
+- [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (S5,X6)
 - [x] X8 self-update notifier — **DONE** (PR #25, `28c4a78`)
 - [ ] X9 `internal/migrate` + `import` — TODO
 
@@ -97,3 +97,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **owner CI/test request + G1 + N3 + N2 merged** (PRs #17–21) — consolidated CI (7→2 jobs, fail-fast cheap→expensive, module/build cache, Docker for integration+e2e) + a `tests/` folder (functional + real-daemon e2e CLI, green on GitHub's runner ~4.5 min); then `internal/dns` (marker-fenced /etc/hosts) and `internal/trust` (mkcert wrapper), both behind injectable runners + fully temp-file/fake tested, with `dns setup|status|remove` and `trust install|uninstall|status` CLIs. **M5 has N1/N2/N3 done; N4 (tunnel) + N5 (saga trust phase) remain.** Per-PR `ci` now runs the e2e lane too, so docs PRs also take ~4.5 min — acceptable; add path filters later if noisy. **Next ready: N4 tunnel, N5 trust saga-phase, S2 (sops), the provision saga phase (host-port coupling), X1 config completion, X8 notifier, X9 import.**
 - (night 2 cont.) **N4 merged** (PR #23, `91f206f`) — `internal/tunnel` (cloudflared wrapper: login/create/route, wildcard-route refusal, deterministic ingress→Caddy, non-local-secret refusal) + `tunnel` CLI. Also added CI `paths-ignore` (`**/*.md`/docs/LICENSE/NOTICE) so **docs-only PRs now skip the heavy lane entirely** (merge with no checks). **M5 networking N1–N4 complete; N5 (wire proxy labels into generate + saga trust phase) is the remaining M5 piece.** Broad frontier still open: S2/S3/S5 secrets, the provision saga phase (host-port coupling), X1 config completion + the M6 fan-out (X2–X9), G2–G5.
 - (night 2 cont.) **X8 merged** (PR #25, `28c4a78`) — `selfupdate.Notifier`: throttled (≤1 network check/24h, XDG-cached), fail-silent, dev-build/`--json`/`--quiet`/`DEVSTACK_NO_UPDATE_NOTIFIER`-aware update notice wired into the CLI root's `PersistentPostRun`. **Session tally: 25 PRs merged, all green** — M2 complete (C1–C8), M4 S1, M5 N1–N4, M6 X8, M7 G1 + the consolidated CI/`tests` overhaul. **Remaining for `done`: N5; S2–S6; the provision saga phase (host-port coupling, the flagged M2 follow-up); X1–X7+X9 (M6); G2–G5 (M7).** Next-ready picks: X1 (config completion — unblocks X2/X3/X4), S2 (sops via shelling), X9 (devdock import), N5 (proxy-into-generate + trust saga phase), the provision phase.
+- (night 2 cont.) **X1 merged** (PR #27, `1c77d44`) — config completion: `Service.MemoryMB` + `Workspace.MemoryBudgetMB` (spec 12/18) and `validateProfiles` (groups reference real services; `defaultProfile` names a defined group or reserved `all`), positioned. Unblocks **X2 (health DAG), X3 (hooks full), X6 (doctor matrix)** — all now ready; X4 waits on X2. **27 PRs merged this session.** Remaining for `done`: N5; S2–S6; provision saga phase (host-port coupling); X2–X7+X9; G2–G5.
