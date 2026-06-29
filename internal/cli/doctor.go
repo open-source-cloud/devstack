@@ -9,6 +9,7 @@ import (
 
 	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/state"
+	"github.com/open-source-cloud/devstack/internal/trust"
 	"github.com/open-source-cloud/devstack/internal/xdg"
 )
 
@@ -132,6 +133,20 @@ func runDoctor(cmd *cobra.Command) []docker.Check {
 		v, _ := db.SchemaVersion()
 		db.Close()
 		checks = append(checks, docker.Check{Name: "state ledger", Status: docker.StatusOK, Detail: fmt.Sprintf("schema v%d @ %s", v, ctxName)})
+	}
+
+	// Local-CA trust (spec 05) — opt-in, so never fatal: report readiness as a
+	// warning with the exact remediation when not fully set up.
+	ts := trust.New().Status(ctx)
+	if ts.OK() {
+		checks = append(checks, docker.Check{Name: "trust (mkcert)", Status: docker.StatusOK, Detail: "local CA installed (" + ts.CARoot + ")"})
+	} else {
+		checks = append(checks, docker.Check{
+			Name:        "trust (mkcert)",
+			Status:      docker.StatusWarn,
+			Detail:      fmt.Sprintf("mkcert=%v CA=%v firefox=%v", ts.MkcertFound, ts.CAInstalled, ts.FirefoxTrust),
+			Remediation: ts.Remediation,
+		})
 	}
 
 	return checks
