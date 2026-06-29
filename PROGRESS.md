@@ -56,7 +56,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [ ] S3 AWS SM+SSM — TODO  *(ready: S1 in; localstack-testable)*
 - [ ] S4 Infisical (gated) — TODO  *(ready: S1 in)*
 - [~] S5 keyring + `secrets login/keygen` — **PARTIAL**: `secrets keygen` (age keypair, PR #39) done. Remaining: `secrets login` keyring (zalando/go-keyring + WSL2 in-mem fallback).
-- [~] S6 post-render resolve + env injection + leak test — **PARTIAL**: generate now emits valueless keys for `secret://` env values + leak test (PR #41). Remaining: the saga secrets phase (collect→Resolve→Compose.Env).
+- [x] S6 post-render resolve + env injection + leak test — **DONE** (generate valueless keys PR #41 + saga secrets phase PR #44: collect→Resolve→Compose.Env, value never on disk)
 
 ### M5 networking (parallel track)
 - [x] N1 `internal/proxy` (Caddy route table + labels) — **DONE** (PR #15, `50e6686`)
@@ -79,7 +79,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 ### M7 GA (rolling)
 - [x] G1 integration lane (`//go:build integration`) — **DONE** (PR #17, `9b6dfca`); CI overhaul + `tests/` folder (functional + daemon e2e) — **DONE** (PR #18, `79f4eef`)
 - [ ] G2 macOS arm64 CI runner — TODO
-- [ ] G3 docs (quickstart/migration/threat-model/troubleshooting) — TODO
+- [~] G3 docs — **PARTIAL**: QUICKSTART + TROUBLESHOOTING (PR #43). Remaining: migration + threat-model.
 - [ ] G4 goreleaser tap + `.deb`/`.rpm` + Apache LICENSE + tag `v1.0` — partial (LICENSE done)
 - [ ] G5 two-terminal race tests — TODO  *(unblocked: C5 in; add to `tests/e2e` behind DEVSTACK_E2E)*
 
@@ -104,3 +104,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **X2 merged** (PR #37) — the workspace dependsOn DAG in `internal/health` (BuildGraph, Cycle with path, stable topo Waves, RequireHealthchecks generate-time guard), pure/unit-tested. **Unblocks X4 (profiles) + X5 (orchestrate consumes Waves).** 37 PRs merged.
 - (night 2 cont.) **X2 + S5-keygen merged** (PRs #37, #39) — the health dependency DAG (cycles/waves/healthy-needs-healthcheck) and `secrets keygen` (offline age keypair via filippo.io/age, pairs with the S2 SOPS+age provider). Added the first new runtime dep (filippo.io/age, pure-Go; CI govulncheck clean — local go1.26.0 stdlib advisories do not apply to CI Go 1.25.x). **39 PRs merged.** Frontier: S3/S4/S6, S5-login(keyring), provision saga phase, N5 trust saga phase, X3/X4/X5/X7/X9, G2–G5.
 - (night 2 cont.) **S6-generate merged** (PR #41) — `secret://` values in env.raw/prefixed now emit valueless compose keys (no ref/value in generated files), with a leak test. Remaining S6: the saga secrets phase (collect refs → batched Resolve → Compose.Env). **41 PRs merged.** Frontier: S3/S4, S5-login, S6-saga, provision phase, N5 trust saga, X3/X4/X5/X7/X9, G2–G5.
+- (night 2 cont.) **G3-docs, S6-saga merged** (PRs #43–44) — quickstart/troubleshooting docs, and the **M4 capstone**: the up sagas secrets phase resolves secret:// refs (batched per provider) and injects values via the compose-up process env — values never on disk (§7.5), proven by tests. **44 PRs merged.** M4 now: S1,S2,S6 done; S3/S4 (cloud providers) + S5-login (keyring) remain. Frontier: S3/S4, S5-login, provision saga phase, N5 trust saga, X3/X4/X5/X7/X9, G2/G4/G5.
