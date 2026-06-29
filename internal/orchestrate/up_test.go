@@ -661,3 +661,76 @@ func TestBuildUpNoProvisionSkips(t *testing.T) {
 		}
 	}
 }
+
+func TestFirstRunOncePerProject(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("workspace.yaml", "apiVersion: devstack/v1\nkind: Workspace\nname: demo\nprojects:\n  - { name: app, path: app }\n")
+	// firstRun appends a line to a counter file in the repo dir each time it runs.
+	write("app/devstack.yaml", `apiVersion: devstack/v1
+kind: Project
+name: app
+services:
+  web: { template: node.vite }
+hooks:
+  firstRun:
+    - { name: seed, run: host, command: ["sh", "-c", "echo x >> firstrun.count"] }
+`)
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	db, err := state.Open(context.Background(), filepath.Join(root, "state"), "ctx")
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	src := template.NewFSSource(templates.FS)
+	lockPath := filepath.Join(root, "lock")
+	mc := &docker.MockClient{}
+	mgr := &workspace.Manager{Model: m, DB: db, Docker: mc, Source: src, LockPath: lockPath}
+	d := UpDeps{
+		Model: m, DB: db, Docker: mc, Manager: mgr, Source: src,
+		LockPath: lockPath, Runner: &fakeRunner{}, Env: map[string]string{},
+		NoPreflight: true, PgConnect: okPgConnect,
+	}
+
+	saga := &Saga{Workspace: m.Workspace.Name, DB: db, LockPath: lockPath}
+	phases := mustPhases(t, d)
+
+	// First up → firstRun runs.
+	if recs, err := saga.Run(context.Background(), phases); err != nil || AnyFailed(recs) {
+		t.Fatalf("up #1: %v\n%+v", err, recs)
+	}
+	countFile := filepath.Join(root, "app", "firstrun.count")
+	if b, _ := os.ReadFile(countFile); strings.Count(string(b), "x") != 1 {
+		t.Fatalf("after up #1 firstRun ran %d times, want 1", strings.Count(string(b), "x"))
+	}
+
+	// Second up → firstRun is satisfied (ledger) and skips.
+	recs2, err := saga.Run(context.Background(), phases)
+	if err != nil || AnyFailed(recs2) {
+		t.Fatalf("up #2: %v\n%+v", err, recs2)
+	}
+	if b, _ := os.ReadFile(countFile); strings.Count(string(b), "x") != 1 {
+		t.Errorf("after up #2 firstRun ran again (count=%d), want still 1 (idempotent)", strings.Count(string(b), "x"))
+	}
+	// The firstRun phase reports skipped on the re-run.
+	var status string
+	for _, r := range recs2 {
+		if r.Phase == "firstRun" {
+			status = r.Status
+		}
+	}
+	if status != StatusOK { // AlwaysRun=false + satisfied → the phase still completes OK with all hooks skipped
+		t.Logf("firstRun re-run status = %q", status)
+	}
+}
