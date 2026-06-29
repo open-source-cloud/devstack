@@ -49,6 +49,7 @@ type UpDeps struct {
 
 	Build         bool          // compose up --build
 	NoHooks       bool          // skip the hooks phase
+	NoPreflight   bool          // skip the preflight phase (fast inner loops)
 	HealthTimeout time.Duration // per-shared-service gate cap (0 → health.Compile default)
 }
 
@@ -72,12 +73,15 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		return nil, err
 	}
 
-	phases := []Phase{
-		preflightPhase(d),
+	var phases []Phase
+	if !d.NoPreflight {
+		phases = append(phases, preflightPhase(d))
+	}
+	phases = append(phases,
 		networkPhase(d),
 		generatePhase(d, gen),
 		sharedPhase(d, projects),
-	}
+	)
 	for _, p := range projects {
 		phases = append(phases, composeUpPhase(d, p))
 	}
