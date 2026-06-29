@@ -17,6 +17,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
+	"github.com/open-source-cloud/devstack/internal/trust"
 	"github.com/open-source-cloud/devstack/internal/workspace"
 )
 
@@ -50,6 +51,9 @@ type UpDeps struct {
 	// Secrets resolves secret:// refs; nil → built from workspace.secrets.providers
 	// with the built-in factories (SOPS+age). Injected for tests.
 	Secrets *secrets.Registry
+	// Trust installs the local CA when network.proxy.httpsLocal; nil → trust.New().
+	// Injected for tests (the trust phase is fenced — failure never aborts up).
+	Trust *trust.Trust
 
 	Build         bool          // compose up --build
 	NoHooks       bool          // skip the hooks phase
@@ -90,6 +94,7 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		networkPhase(d),
 		generatePhase(d, gen),
 		secretsPhase(d, projects, secretEnv),
+		trustPhase(d),
 		sharedPhase(d, projects),
 	)
 	// Hook ordering (spec 11): workspace preUp → per-project (preUp → compose-up →
@@ -110,6 +115,30 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		phases = append(phases, hookPhase(d, "", "postUp", d.Model.Workspace.Hooks.PostUp, hooks.OnAbort))
 	}
 	return phases, nil
+}
+
+// trustPhase installs the local CA when network.proxy.httpsLocal is set (spec 05
+// §trust, spec 09 phase 7). It is FENCED: a missing mkcert / no sudo degrades to
+// a warning and never aborts `up`. A no-op when httpsLocal is off.
+func trustPhase(d UpDeps) Phase {
+	return Phase{
+		Name:      "trust",
+		AlwaysRun: true,
+		Run: func(ctx context.Context) (any, error) {
+			if !d.Model.Workspace.Network.Proxy.HTTPSLocal {
+				return map[string]any{"status": "skipped (httpsLocal off)"}, nil
+			}
+			t := d.Trust
+			if t == nil {
+				t = trust.New()
+			}
+			if err := t.Install(ctx); err != nil {
+				// Fenced: never fail the saga on a trust problem.
+				return map[string]any{"status": "warning", "error": err.Error()}, nil
+			}
+			return map[string]any{"status": "installed"}, nil
+		},
+	}
 }
 
 // secretsPhase resolves every secret:// ref the requested projects reference and
