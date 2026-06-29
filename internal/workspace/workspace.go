@@ -31,6 +31,9 @@ type Manager struct {
 	Docker   docker.Client
 	Source   template.TemplateSource
 	LockPath string
+	// Runner drives the compose CLI for shared-stack lifecycle verbs (gc stop).
+	// nil → docker.ExecRunner. Injectable so gc is unit-testable without a daemon.
+	Runner docker.Runner
 }
 
 // SharedInstance is a resolved shared service: its config name, the DNS alias /

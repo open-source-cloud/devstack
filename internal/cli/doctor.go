@@ -13,14 +13,23 @@ import (
 )
 
 func newDoctorCmd(g *GlobalOpts) *cobra.Command {
-	var fix bool
+	var (
+		fix          bool
+		rebuildState bool
+	)
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Probe the environment and report capabilities with remediations",
 		Long: "doctor runs the REAL branch logic (not docs) for the tools and paths devstack\n" +
-			"depends on, and prints a one-line remediation for anything that isn't OK.",
+			"depends on, and prints a one-line remediation for anything that isn't OK.\n\n" +
+			"With --rebuild-state, the shared_service + ref ledger is reconstructed from\n" +
+			"on-disk config intersected with live container labels (recovery when state.db\n" +
+			"is lost or corrupt — the ledger is a cache of reality).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if rebuildState {
+				return rebuildLedger(cmd, g)
+			}
 			checks := runDoctor(cmd)
 			if g.JSON {
 				return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"checks": checks})
@@ -38,7 +47,29 @@ func newDoctorCmd(g *GlobalOpts) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&fix, "fix", false, "apply safe automatic remediations (M6)")
+	cmd.Flags().BoolVar(&rebuildState, "rebuild-state", false, "reconstruct the ledger from config + live container labels")
 	return cmd
+}
+
+// rebuildLedger reconstructs the shared_service + ref ledger from on-disk config
+// intersected with live container labels (spec 09 §crash-recovery).
+func rebuildLedger(cmd *cobra.Command, g *GlobalOpts) error {
+	mgr, closeFn, err := buildManager(cmd)
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+	sum, err := mgr.RebuildState(cmd.Context())
+	if err != nil {
+		return err
+	}
+	if g.JSON {
+		return writeJSON(cmd, sum)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(),
+		"rebuilt ledger from live labels: %d shared service(s), %d ref row(s)\n",
+		len(sum.Shared), sum.Refs)
+	return nil
 }
 
 // runDoctor assembles the full capability matrix. Each probe is independent so a
