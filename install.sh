@@ -10,6 +10,8 @@
 #   DEVSTACK_INSTALL_DIR=/usr/bin    install dir (default: $XDG_BIN_HOME or ~/.local/bin)
 #   DEVSTACK_ALIASES="rq uranus"     also install argv[0] alias symlinks
 #   DEVSTACK_NO_VERIFY=1             skip the SHA-256 checksum verification
+#   GITHUB_TOKEN / GH_TOKEN          auth for the GitHub API (raises rate limits;
+#                                    required while the repo/releases are private)
 #
 # The script is POSIX sh, needs only curl-or-wget + tar + sha256sum/shasum, and
 # never requires root unless you point DEVSTACK_INSTALL_DIR at a system path.
@@ -17,6 +19,8 @@ set -eu
 
 REPO="open-source-cloud/devstack"
 BINARY="devstack"
+API="https://api.github.com/repos/${REPO}"
+TOKEN="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
 
 # --- pretty output ---------------------------------------------------------
 if [ -t 1 ]; then
@@ -34,13 +38,19 @@ have() { command -v "$1" >/dev/null 2>&1; }
 if have curl; then
 	dl() { curl -fsSL "$1"; }
 	dl_to() { curl -fsSL -o "$2" "$1"; }
+	# api adds the auth header (when a token is set) for GitHub API reads only.
+	api() { if [ -n "$TOKEN" ]; then curl -fsSL -H "Authorization: Bearer $TOKEN" "$1"; else curl -fsSL "$1"; fi; }
 elif have wget; then
 	dl() { wget -qO- "$1"; }
 	dl_to() { wget -qO "$2" "$1"; }
+	api() { if [ -n "$TOKEN" ]; then wget -qO- --header="Authorization: Bearer $TOKEN" "$1"; else wget -qO- "$1"; fi; }
 else
 	die "need curl or wget to download devstack"
 fi
 have tar || die "need tar to unpack the release archive"
+
+# extract_tag pulls the first tag_name out of a GitHub releases JSON payload.
+extract_tag() { grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'; }
 
 # --- detect platform -------------------------------------------------------
 os="$(uname -s)"
@@ -61,9 +71,11 @@ esac
 tag="${DEVSTACK_VERSION:-}"
 if [ -z "$tag" ]; then
 	info "resolving latest release"
-	tag="$(dl "https://api.github.com/repos/${REPO}/releases/latest" \
-		| grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')"
-	[ -n "$tag" ] || die "could not determine the latest release (set DEVSTACK_VERSION to pin one)"
+	# Prefer /releases/latest; fall back to the first entry of /releases (covers
+	# pre-release-only repos and the brief post-publish API propagation window).
+	tag="$(api "${API}/releases/latest" 2>/dev/null | extract_tag || true)"
+	[ -n "$tag" ] || tag="$(api "${API}/releases" 2>/dev/null | extract_tag || true)"
+	[ -n "$tag" ] || die "could not determine the latest release. Pin one with DEVSTACK_VERSION=vX.Y.Z, and if the repo is private set GITHUB_TOKEN."
 fi
 # goreleaser strips the leading 'v' from the archive filename's version field.
 version="${tag#v}"
