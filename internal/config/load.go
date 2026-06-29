@@ -17,6 +17,29 @@ func Load(start string) (*Model, error) {
 	return LoadAt(root)
 }
 
+// LoadWorkspaceOnly discovers the workspace root and parses ONLY workspace.yaml
+// (validated structurally), without loading each project's devstack.yaml — which
+// may not exist yet (the `ws clone` case, before repos are on disk). Returns the
+// root and the parsed Workspace.
+func LoadWorkspaceOnly(start string) (string, *Workspace, error) {
+	root, err := Discover(start)
+	if err != nil {
+		return "", nil, err
+	}
+	src, err := newSource(filepath.Join(root, WorkspaceFile))
+	if err != nil {
+		return "", nil, err
+	}
+	var ws Workspace
+	if err := src.decode(&ws); err != nil {
+		return "", nil, err
+	}
+	if err := structValidate(&ws); err != nil {
+		return "", nil, formatStructErr(src.path, err)
+	}
+	return root, &ws, nil
+}
+
 // LoadAt loads the workspace rooted at an already-discovered directory.
 func LoadAt(root string) (*Model, error) {
 	wsSrc, err := newSource(filepath.Join(root, WorkspaceFile))
