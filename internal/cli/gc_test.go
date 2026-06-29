@@ -59,3 +59,15 @@ func TestDoctorIncludesTrustProbe(t *testing.T) {
 		t.Errorf("doctor --json missing the trust probe:\n%s", out.String())
 	}
 }
+
+func TestDoctorIncludesSharedProbe(t *testing.T) {
+	var out strings.Builder
+	root := NewRootCmd(Options{})
+	root.SetArgs([]string{"doctor", "--json"})
+	root.SetOut(&out)
+	root.SetErr(&out)
+	_ = root.Execute()
+	if !strings.Contains(out.String(), `"shared services"`) {
+		t.Errorf("doctor --json missing the shared-services probe:\n%s", out.String())
+	}
+}
