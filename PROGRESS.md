@@ -20,15 +20,15 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 
 ### M2-remainder (core saga)
 - [x] C1  state v2 `saga_phase` table + CRUD — **DONE** (PR #1, `9900b87`)
-- [ ] C2  docker `ContainerInspect`/`ContainerLogs` + mock — TODO  *(kickoff)*
-- [ ] C3a config `healthcheck:`/`hooks:` structs — TODO  *(kickoff)*
-- [ ] C3b `internal/health` thin poller — BLOCKED (C2, C3a)
-- [ ] C3c generate emits `healthcheck:` — BLOCKED (C3a)
-- [ ] C4  `internal/hooks` thin runner — BLOCKED (C3a)
-- [ ] C5  `internal/orchestrate` core saga — BLOCKED (C1,C2,C3b,C4)
+- [x] C2  docker `ContainerInspect`/`ContainerLogs` + mock — **DONE** (PR #2, `d291ef5`)
+- [x] C3a config `healthcheck:`/`hooks:`/`dependsOn:` structs — **DONE** (PR #3, `901aaad`)
+- [x] C3b `internal/health` thin poller — **DONE** (PR #4, `fa338aa`)
+- [x] C3c generate emits `healthcheck:` + intra-project `depends_on` — **DONE** (PR #6, `a6f3195`)
+- [x] C4  `internal/hooks` thin runner + `hook_run` CRUD — **DONE** (PR #5, `de08588`)
+- [ ] C5  `internal/orchestrate` core saga — TODO  *(ready: C1,C2,C3b,C4 all merged)*
 - [ ] C6  CLI `up`/`down` — BLOCKED (C5)
 - [ ] C7  CLI `status` — BLOCKED (C5,C3b)
-- [ ] C8  `shared gc` + `doctor --rebuild-state` — BLOCKED (C2)
+- [ ] C8  `shared gc` + `doctor --rebuild-state` — TODO  *(ready: C2 merged)*
 
 ### M4 secrets (parallel track)
 - [ ] S1 core (`secret://` parser, Provider iface, Registry, batched Resolve) — TODO
@@ -70,3 +70,4 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 ## Night log
 - (init) scaffolding: PROGRESS.md + Apache-2.0 LICENSE/NOTICE + nightly cron + repo auto-merge enabled.
 - (night 1) **C1 merged** (PR #1, `9900b87`) — `saga_phase` v2 migration + CRUD, race-clean, merge-on-green proven. Next ready (parallel): C2, C3a, S1, N1..N4, X1, X8, X9, G1.
+- (night 2) **C2, C3a, C3b, C3c, C4 merged** (PRs #2–6) — the entire health/hooks substrate: read-only docker inspect/logs, config health/hooks/dependsOn structs, the `internal/health` poller, generate's compose `healthcheck:`/`depends_on` lowering, and the `internal/hooks` runner + `hook_run` ledger. Each green via `make ci`+determinism+`-tags=integration` against the local Engine 29.5.3; PR-poll-then-merge enforces the green gate (main is unprotected, so plain `--auto` would merge instantly). **C5 (core saga) is now unblocked** — its deps C1,C2,C3b,C4 are all in. Also ready: C8, S1, N1..N4, X1, X8, X9, G1.
