@@ -114,6 +114,26 @@ jobs:
           version: "~> v2"
           args: release --snapshot --clean
 
+  integration:
+    # Real-daemon lane (G1): runs the //go:build integration tests against
+    # ubuntu-latest's Docker (read-only inspect/logs, health polling, compose
+    # exec). Tests self-isolate with per-run names (devstack-it-<pid>) + t.Cleanup
+    # and skip gracefully if the daemon is unreachable.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - name: docker available
+        run: docker version
+      - name: integration tests (-tags=integration -race)
+        env:
+          CGO_ENABLED: "1" # race detector needs cgo
+        run: go test -tags=integration -race ./...
+
   # Placeholder lanes wired as their milestones land:
   #  - schema-drift: JSON-Schema ↔ Go-struct round-trip check (M1)
-  #  - integration: testcontainers-go / dind lane behind a build tag (M7)
+  #  - macos: macos-14 arm64 preflight-only (G2)
+  #  - config-conformance: golden workspace exercising every schema field
