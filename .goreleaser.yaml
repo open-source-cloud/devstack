@@ -43,7 +43,7 @@ nfpms:
     formats: [deb, rpm]
     maintainer: "Gustavo Bertoi"
     description: "Docker-based dev environments with infrastructure shared across projects"
-    license: "TBD"
+    license: "Apache-2.0"
     bindir: /usr/bin
 
 snapshot:

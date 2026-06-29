@@ -1,0 +1,16 @@
+devstack
+Copyright 2026 The devstack Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+---
+
+This product includes software developed by third parties under the
+Apache License, Version 2.0, and other compatible open-source licenses.
+
+- github.com/compose-spec/compose-go (Apache License 2.0)
+  Copyright The Compose Specification Authors.
+  Used to validate and normalize the generated Docker Compose model.
+
+Other dependencies and their licenses are listed in go.mod / go.sum and are
+distributed under their respective terms.

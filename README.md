@@ -241,5 +241,4 @@ an `internal/` interface with a mock so tests run without the real dependency.
 
 ## License
 
-**TBD** (intended open source). Note: bundling `compose-go` (Apache-2.0) requires
-carrying its `NOTICE`/attribution.
+[Apache-2.0](LICENSE). Bundled `compose-go` (Apache-2.0) is attributed in [NOTICE](NOTICE).
