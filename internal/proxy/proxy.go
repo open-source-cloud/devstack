@@ -71,6 +71,28 @@ func HostFor(service, project string) string {
 	return service + "." + project + "." + LocalDomain
 }
 
+// LabelsForService returns the Caddy labels a generated project service should
+// carry when the proxy is enabled and the service exposes a port; nil otherwise.
+// This is the single seam generate uses to emit routing (no central config).
+func LabelsForService(m *config.Model, project, service string) map[string]string {
+	if !Enabled(m) {
+		return nil
+	}
+	p, ok := m.Projects[project]
+	if !ok {
+		return nil
+	}
+	port := primaryPort(p.Services[service].Ports)
+	if port == 0 {
+		return nil
+	}
+	return CaddyLabels(Route{
+		Project: project, Service: service,
+		Host: HostFor(service, project), Port: port,
+		TLS: m.Workspace.Network.Proxy.HTTPSLocal,
+	})
+}
+
 // CaddyLabels renders the caddy-docker-proxy labels for a route. These are merged
 // onto the project service in the generated compose so caddy reloads on the
 // Docker event with no central-config edit (spec 05).

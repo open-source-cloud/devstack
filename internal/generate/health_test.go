@@ -161,3 +161,38 @@ services:
 		t.Errorf("compose should reference the cache dependency:\n%s", compose)
 	}
 }
+
+// TestProxyLabelsEmitted verifies the caddy-docker-proxy labels are merged onto
+// a routed service when the workspace declares a proxy (spec 05 / N5).
+func TestProxyLabelsEmitted(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("workspace.yaml", "apiVersion: devstack/v1\nkind: Workspace\nname: shop\nnetwork: { proxy: { engine: caddy, httpsLocal: true } }\nprojects:\n  - { name: api, path: api }\n")
+	write("api/devstack.yaml", "apiVersion: devstack/v1\nkind: Project\nname: api\nservices:\n  web: { template: node.vite, ports: { http: 8080 } }\n")
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	g, err := New(m, template.NewFSSource(templates.FS), WithEnv(map[string]string{}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	st, err := g.GenerateProject("api")
+	if err != nil {
+		t.Fatalf("GenerateProject: %v", err)
+	}
+	compose := string(st.Compose)
+	for _, want := range []string{"caddy: web.api.localhost", "caddy.reverse_proxy", "caddy.tls: internal"} {
+		if !strings.Contains(compose, want) {
+			t.Errorf("compose missing proxy label %q:\n%s", want, compose)
+		}
+	}
+}
