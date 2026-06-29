@@ -183,6 +183,16 @@ func (g *Git) Pull(ctx context.Context, dir string) error {
 	return err
 }
 
+// Head returns the current commit SHA (HEAD). Used to detect whether a pull
+// actually advanced the worktree (the postPull-hook trigger, spec 11).
+func (g *Git) Head(ctx context.Context, dir string) (string, error) {
+	out, err := g.run(ctx, dir, "--no-optional-locks", "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // RemoteURL returns origin's URL (for idempotent clone validation).
 func (g *Git) RemoteURL(ctx context.Context, dir string) (string, error) {
 	out, err := g.run(ctx, dir, "--no-optional-locks", "remote", "get-url", "origin")
