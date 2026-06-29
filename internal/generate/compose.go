@@ -13,6 +13,7 @@ import (
 
 	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/proxy"
+	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/template"
 )
 
@@ -161,8 +162,14 @@ func (b *serviceBuilder) projectEnv(svc config.Service, fragment map[string]any)
 	// 1. Template-provided environment (already rendered), in either map or list
 	// (["KEY=VALUE"]) form — both are valid compose and must not be dropped.
 	env := envFromFragment(fragment["environment"])
-	// 2. env.raw — interpolated, emitted verbatim.
+	// 2. env.raw — interpolated, emitted verbatim. A secret:// value becomes a
+	// VALUELESS key (the §7.5 coupling): its resolved value is injected at runtime
+	// via the compose-up process env, never written to the generated file.
 	for _, k := range sortedKeys(svc.Env.Raw) {
+		if secrets.IsRef(svc.Env.Raw[k]) {
+			env[k] = nil
+			continue
+		}
 		val, err := config.Interpolate(svc.Env.Raw[k], b.res)
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s env.raw[%s]: %w", b.project, b.service, k, err)
@@ -171,11 +178,16 @@ func (b *serviceBuilder) projectEnv(svc config.Service, fragment map[string]any)
 	}
 	// 3. env.prefixed — same, but namespaced under the service name.
 	for _, k := range sortedKeys(svc.Env.Prefixed) {
+		key := envPrefix(b.service) + "_" + k
+		if secrets.IsRef(svc.Env.Prefixed[k]) {
+			env[key] = nil
+			continue
+		}
 		val, err := config.Interpolate(svc.Env.Prefixed[k], b.res)
 		if err != nil {
 			return nil, fmt.Errorf("%s.%s env.prefixed[%s]: %w", b.project, b.service, k, err)
 		}
-		env[envPrefix(b.service)+"_"+k] = val
+		env[key] = val
 	}
 	// 4. env.import — connection vars pulled from a shared service / another service.
 	for i, imp := range svc.Env.Import {

@@ -196,3 +196,51 @@ func TestProxyLabelsEmitted(t *testing.T) {
 		}
 	}
 }
+
+// TestSecretRefEnvValueless verifies a secret:// value in env.raw/prefixed is
+// emitted as a VALUELESS key — the ref string (and any resolved value) never
+// reaches the generated compose (§7.5 / S6).
+func TestSecretRefEnvValueless(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("workspace.yaml", "apiVersion: devstack/v1\nkind: Workspace\nname: demo\nprojects:\n  - { name: app, path: app }\n")
+	write("app/devstack.yaml", `apiVersion: devstack/v1
+kind: Project
+name: app
+services:
+  web:
+    template: node.vite
+    env:
+      raw: { DB_PASSWORD: "secret://sops/secrets.enc.yaml#pw", APP_ENV: "dev" }
+`)
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	g, err := New(m, template.NewFSSource(templates.FS), WithEnv(map[string]string{}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	st, err := g.GenerateProject("app")
+	if err != nil {
+		t.Fatalf("GenerateProject: %v", err)
+	}
+	compose := string(st.Compose)
+	if strings.Contains(compose, "secret://") {
+		t.Errorf("secret ref leaked into generated compose:\n%s", compose)
+	}
+	if !strings.Contains(compose, "DB_PASSWORD: null") {
+		t.Errorf("DB_PASSWORD should be a valueless (null) key:\n%s", compose)
+	}
+	if !strings.Contains(compose, "APP_ENV: dev") {
+		t.Errorf("non-secret env should still be emitted verbatim:\n%s", compose)
+	}
+}
