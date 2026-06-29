@@ -14,7 +14,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-source-cloud/devstack/internal/alias"
+	"github.com/open-source-cloud/devstack/internal/selfupdate"
 	"github.com/open-source-cloud/devstack/internal/version"
+	"github.com/open-source-cloud/devstack/internal/xdg"
 )
 
 // GlobalOpts holds the global flags every command renders through.
@@ -53,6 +55,15 @@ func NewRootCmd(opts Options) *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			setupLogging(cmd.ErrOrStderr(), g)
 			return nil
+		},
+		// Fail-silent, throttled update notice on stderr (spec 14). Skipped for
+		// --json/--quiet and dev builds; at most one network check per day.
+		PersistentPostRun: func(cmd *cobra.Command, _ []string) {
+			if g.JSON || g.Quiet {
+				return
+			}
+			selfupdate.Notifier{Current: version.Version, CacheDir: xdg.CacheHome()}.
+				Notify(cmd.Context(), cmd.ErrOrStderr())
 		},
 	}
 
