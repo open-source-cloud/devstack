@@ -30,7 +30,6 @@ func rootName(c *cobra.Command) string { return c.Root().Name() }
 // alias and version are real; everything else is a milestone-tagged placeholder.
 func addStubCommands(root *cobra.Command, _ *GlobalOpts) {
 	root.AddCommand(
-		stub("status", "Multi-repo git + service health table", "M3"),
 		stub("shell", "Open a shell in a service container", "M2"),
 		stub("logs", "Stream service logs", "M2"),
 		stub("secrets", "Secrets providers (login, keygen)", "M4",
