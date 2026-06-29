@@ -19,7 +19,7 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 ## Frontier
 
 ### M2-remainder (core saga)
-- [x] C1  state v2 `saga_phase` table + CRUD — REVIEW (PR `nightly/C1`)
+- [x] C1  state v2 `saga_phase` table + CRUD — **DONE** (PR #1, `9900b87`)
 - [ ] C2  docker `ContainerInspect`/`ContainerLogs` + mock — TODO  *(kickoff)*
 - [ ] C3a config `healthcheck:`/`hooks:` structs — TODO  *(kickoff)*
 - [ ] C3b `internal/health` thin poller — BLOCKED (C2, C3a)
@@ -68,4 +68,5 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 - (M5, when those land) run `sudo devstack trust install`, verify HTTPS in a browser; real cloudflared route needs a Cloudflare account + manual wildcard CNAME.
 
 ## Night log
-- (init) scaffolding: PROGRESS.md + Apache-2.0 LICENSE/NOTICE + nightly cron. Next ready: C1, C2, C3a, S1, N1..N4, X1, X8, X9, G1.
+- (init) scaffolding: PROGRESS.md + Apache-2.0 LICENSE/NOTICE + nightly cron + repo auto-merge enabled.
+- (night 1) **C1 merged** (PR #1, `9900b87`) — `saga_phase` v2 migration + CRUD, race-clean, merge-on-green proven. Next ready (parallel): C2, C3a, S1, N1..N4, X1, X8, X9, G1.
