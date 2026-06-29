@@ -21,7 +21,7 @@ BINDIR      ?= $(or $(XDG_BIN_HOME),$(PREFIX)/bin)
 
 # The release binary MUST be CGO-free (static), but `go test -race` REQUIRES cgo.
 # So CGO is set per-target, never globally.
-.PHONY: build run test test-race test-one vet fmt fmt-check lint tidy vuln clean snapshot ci determinism install uninstall smoke help
+.PHONY: build run test test-race integration e2e test-one vet fmt fmt-check lint tidy vuln clean snapshot ci determinism install uninstall smoke help
 
 build: ## Build the static binary into ./dist
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/$(BINARY) ./cmd/devstack
@@ -34,6 +34,12 @@ test: ## Run unit tests
 
 test-race: ## Run unit tests with the race detector (needs cgo)
 	CGO_ENABLED=1 go test -race ./...
+
+integration: ## Run the real-daemon integration tests (needs Docker + cgo)
+	CGO_ENABLED=1 go test -tags=integration -race ./...
+
+e2e: ## Run the CLI end-to-end tests (builds the binary; mutates Docker)
+	DEVSTACK_E2E=1 go test -tags=e2e ./tests/e2e/...
 
 # Run a single test, e.g.: make test-one RUN=TestSerializesAcquire PKG=./internal/lock
 test-one:
@@ -125,4 +131,4 @@ clean:
 	rm -rf dist
 
 help:
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
