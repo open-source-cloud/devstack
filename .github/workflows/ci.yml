@@ -103,6 +103,32 @@ jobs:
           version: "~> v2"
           args: release --snapshot --clean
 
+  # Native macOS arm64 lane (G2): proves the darwin/arm64 RUNTIME target — not just
+  # the cross-compile on the Linux lane — actually builds and passes its daemon-free
+  # tests. Hosted macOS runners have no Docker, so the integration/e2e (daemon)
+  # steps stay on the ubuntu `ci` lane; this lane runs build + unit(-race) + a
+  # binary preflight. Invoked via `go` directly (not make: hosted macOS ships BSD
+  # make, and the Makefile uses GNU features).
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+      - name: build (CGO disabled — static binary invariant)
+        run: CGO_ENABLED=0 go build ./...
+      - name: unit tests -race
+        env:
+          CGO_ENABLED: "1" # the race detector requires cgo
+        run: go test -race ./...
+      - name: binary preflight (runs natively on arm64)
+        run: |
+          go build -o devstack ./cmd/devstack
+          ./devstack version
+          ./devstack --help >/dev/null
+
   # Placeholder lanes wired as their milestones land:
-  #  - macos: macos-14 arm64 preflight-only (G2)
   #  - config-conformance: golden workspace exercising every schema field
