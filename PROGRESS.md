@@ -74,13 +74,13 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [x] X6 `internal/doctor` full matrix + `--fix` — **DONE** (trust/dns/shared probes PRs #33/#35/#48 + safe reconcile `--fix` PR #49)
 - [x] X7 `workspace destroy`/`uninstall` — **DONE** (PR #56 `workspace destroy` data-preserving teardown; PR #61 `uninstall` machine-global teardown: compose down -v all stacks → network rm → CA removal (host/Firefox/Windows) → /etc/hosts → aliases → XDG dirs, best-effort + confirm-gated). Minor follow-up: `destroy --purge-data` (uninstall already does the full-machine purge).
 - [x] X8 self-update notifier — **DONE** (PR #25, `28c4a78`)
-- [ ] X9 `internal/migrate` + `import` — TODO
+- [x] X9 `internal/migrate` + `import` — **DONE** (PR #76: tolerant devdock→two-file converter — shared/project split, `uses`→`workspace.shared.*`, `${svc.var}`→`${ref:...}`, git-shorthand expansion, lossless-or-loud report; CLI `import [--dry-run] [--out] [--force]`, no-clobber+backup).
 
 ### M7 GA (rolling)
 - [x] G1 integration lane (`//go:build integration`) — **DONE** (PR #17, `9b6dfca`); CI overhaul + `tests/` folder (functional + daemon e2e) — **DONE** (PR #18, `79f4eef`)
 - [x] G2 macOS arm64 CI runner — **DONE** (PR #68: native `macos-14` lane — CGO-free build + `-race` unit suite + binary preflight; daemon steps stay on the ubuntu lane. Verified green on the PR.)
 - [x] G3 docs — **DONE**: QUICKSTART + TROUBLESHOOTING (PR #43) + THREAT-MODEL + MIGRATION (this PR). (Automated `import` field-mapping doc follows X9 / the devdock schema.)
-- [ ] G4 goreleaser tap + `.deb`/`.rpm` + Apache LICENSE + tag `v1.0` — partial (LICENSE done)
+- [~] G4 release plumbing — **CODE COMPLETE; only owner release actions remain** (PR #77 + prior): goreleaser (4 targets), `.deb`/`.rpm` via nfpm, archives bundling LICENSE/NOTICE/README/docs (Apache-compliant), checksums, changelog, installer, LICENSE — all in place and `release-dryrun`-green every PR. **Owner-only (decision #4, outward-facing/irreversible):** create the Homebrew tap repo (Q-NAME) + wire `brews:`, then `git tag v1.0.0 && git push origin v1.0.0`, then flip the repo public.
 - [x] G5 two-terminal race tests — **DONE** (PR #71: cross-process port-allocation race over the flock — subprocess-helper pattern, daemon-free, proves distinct ports across 5 processes = the lock-first invariant; surfaced + documented the concurrent-first-open/flock-FS hazard already covered by doctor's 9p probe).
 
 ## Human steps pending (owner)
@@ -129,3 +129,9 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 3 cont.) **provision phase + X3 firstRun merged** (PRs #73, #74) — the M2 capstone landed: per-project Postgres role+db via host-side pgx through an up-time `127.0.0.1:<ledger port>` overlay (generated compose untouched → determinism preserved; password=project loopback dev DB; opt-in DSN; `--no-provision`). firstRun hooks (ledger-idempotent) complete X3. **74 PRs merged. M2/M4/M5/M6 all COMPLETE; M7 = G1/G2/G3/G5 done.** Only two items remain, both genuinely not autonomously completable:
   - **X9 `internal/migrate` + `import`** — needs a real legacy `devdock` `project.yaml` sample. There is zero reference for the devdock schema in-repo, so a guessed importer would encode wrong field names (a broken feature, not a "reasonable default"). Blocked on the owner providing a sample file (then it's a quick mapping, mirroring the MIGRATION.md concept table).
   - **G4 cut `v1.0`** — owner release action. Tagging `v*` triggers the public goreleaser release workflow (outward-facing + irreversible); locked decision #4 reserves the release/public-repo flip for the owner. All release plumbing (goreleaser, `.deb`/`.rpm`, LICENSE, installer) is in place and `release-dryrun` is green on every PR — the owner just runs `git tag v1.0.0 && git push origin v1.0.0`.
+- (night 3 cont.) **X9 import + G4 release plumbing merged** (PRs #76, #77) — `devstack import` (tolerant devdock→two-file converter, lossless-or-loud, spec 14) lands the last M6 feature; goreleaser now bundles LICENSE/NOTICE/README/docs in archives + `.deb`/`.rpm` (Apache-compliant), validated by a local `goreleaser --snapshot` (8 artifacts) + `release-dryrun`. **77 PRs merged.**
+
+  **🏁 AUTONOMOUS BUILD COMPLETE — every implementable chunk M2→M7 is DONE and green.** M2 (incl. provision capstone), M3, M4 (S1–S6), M5 (N1–N5), M6 (X1–X9), M7 (G1/G2/G3/G5 + G4 code) all merged. The ONLY remaining work is owner-only release actions, which an autonomous agent must not take (outward-facing + irreversible, locked decision #4):
+  1. `git tag v1.0.0 && git push origin v1.0.0` — cuts the public goreleaser release (binaries + `.deb`/`.rpm` + checksums).
+  2. create the `homebrew-tap` repo (Q-NAME) + add the `brews:` block (or do it post-tag).
+  3. `gh repo edit open-source-cloud/devstack --visibility public --accept-visibility-change-consequences` — make the repo public (history is secret-clean) so the curl|sh installer works.
