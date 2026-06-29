@@ -39,16 +39,16 @@ proven green end-to-end against the host daemon (then torn down); re-run skips
 satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 `shared gc`/`doctor --rebuild-state` maintain the ledger.
 
-**Deferred from C5 (flagged, slot in as more saga phases — no engine change):**
-- **provision** phase — needs the shared-Postgres **host-port coupling** (pgx
-  connects from the host; default is no published ports). Decision is known
-  (ledger-allocated published port wired into generate + the saga); it's the next
-  M2 follow-up. Until then projects use the shared engine's root creds.
-- **clone** (gitx), **secrets** (M4/S6), **trust** (N5), **firstRun** hooks
-  (need the provisioned-volume scope_key) — each adds one phase.
-- **Saga daemon e2e in CI** — needs **G1**'s isolation harness (parameterized
-  `devstack-it-<pid>` network/prefix; the saga must never touch a real
-  `devstack_shared`). Unit wiring is mock-tested; e2e was verified manually.
+**Deferred-from-C5 saga phases — ALL LANDED:**
+- **provision** phase — **DONE** (PR #73): per-project Postgres role+db via pgx
+  from the host, reached through an up-time `127.0.0.1:<ledger port>` overlay (so
+  the deterministic generated compose is untouched); password=project (loopback
+  dev DB), opt-in DSN, `--no-provision` to skip.
+- **clone** (gitx ✅ M3), **secrets** (M4/S6 ✅), **trust** (N5 ✅), **firstRun**
+  hooks (✅ PR #74, scope_key now exists) — all wired.
+- **Saga daemon e2e in CI** — the daemon-free cross-process flock race (G5 ✅) +
+  the integration/e2e lanes (G1 ✅) cover the saga; full real-`up` saga e2e was
+  verified manually against the host Engine.
 
 ### M4 secrets (parallel track)
 - [x] S1 core (`secret://` parser, Provider iface, Registry, batched Resolve) — **DONE** (PR #14, `bdba2ab`)
@@ -68,7 +68,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 ### M6 (saga completion + glue)
 - [x] X1 config completion — **DONE** (PR #27, `1c77d44`)
 - [x] X2 `internal/health` full DAG — **DONE** (PR #37: BuildGraph/Cycle/Waves/RequireHealthchecks)
-- [~] X3 hooks full — **PARTIAL**: preUp/postUp in the saga (PR #46); postPull on `ws sync` (PR #69: HEAD-change-gated, `--no-hooks`). Remaining: **firstRun** (blocked on the provision phase's `scope_key`).
+- [x] X3 hooks full — **DONE**: preUp/postUp (PR #46), postPull on `ws sync` (PR #69), firstRun (PR #74: ledger-idempotent per-hook, after compose-up, abort-on-failure). All lifecycle hooks wired.
 - [x] X4 profiles/selective-up — **DONE** (PR #53: internal/profile.Resolve — Q-PROFILE resolved). Saga --profile wiring is X5.
 - [x] X5 orchestrate completion — **DONE** (PR #55: `up --profile` service-slicing wired into BuildUp — inactive projects drop out, compose-up restricted to active services, shared phase + health gate pruned to `active.Shared`; PR #57: spec-12 `memoryBudgetMB` over-budget warning). Follow-up (small): spec-native `COMPOSE_PROFILES`/`profiles:` emission.
 - [x] X6 `internal/doctor` full matrix + `--fix` — **DONE** (trust/dns/shared probes PRs #33/#35/#48 + safe reconcile `--fix` PR #49)
@@ -126,3 +126,6 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
   - **provision saga phase** (M2 capstone; also unblocks X3 firstRun). Now fully scoped: (1) generate publishes shared-postgres `ports: ["${DEVSTACK_PG_PORT}:5432"]` — a *deterministic literal placeholder* so golden output stays byte-identical (golden needs a one-line update); (2) the saga allocates `DEVSTACK_PG_PORT` via `Manager.FreeHostPort` and injects it into the shared compose-up env; (3) a new `provisionPhase` (after shared-postgres healthy) pgx-connects to `127.0.0.1:<port>` as the template admin and runs `provision.Postgres.EnsureProject` per project that `uses: workspace.shared.postgres`, recording ownership in the `provisioned` ledger. **Two decisions make this a deliberate, not-rushed change:** the per-project DB **password lifecycle** (the `provisioned` table has no password column → either a *released, append-only* schema migration, or the dev-default `password = <project>` which needs no storage and suits a network-isolated dev DB) and the **cred-consumption contract** (recommended: app opts into the documented `postgres://<proj>:<proj>@shared-postgres:5432/<proj>` DSN — never auto-override an app's own DB env). It touches the determinism-golden path + adds host-side pgx, so it warrants a fresh focused session to land green, not a tail-end attempt.
   - **X9 `import`** — needs a real legacy `devdock` `project.yaml` sample to map fields (can't invent the schema).
   - **G4 cut `v1.0`** — owner release decision (goreleaser/`.deb`/`.rpm`/LICENSE all in place; tagging a public release is an outward-facing owner action).
+- (night 3 cont.) **provision phase + X3 firstRun merged** (PRs #73, #74) — the M2 capstone landed: per-project Postgres role+db via host-side pgx through an up-time `127.0.0.1:<ledger port>` overlay (generated compose untouched → determinism preserved; password=project loopback dev DB; opt-in DSN; `--no-provision`). firstRun hooks (ledger-idempotent) complete X3. **74 PRs merged. M2/M4/M5/M6 all COMPLETE; M7 = G1/G2/G3/G5 done.** Only two items remain, both genuinely not autonomously completable:
+  - **X9 `internal/migrate` + `import`** — needs a real legacy `devdock` `project.yaml` sample. There is zero reference for the devdock schema in-repo, so a guessed importer would encode wrong field names (a broken feature, not a "reasonable default"). Blocked on the owner providing a sample file (then it's a quick mapping, mirroring the MIGRATION.md concept table).
+  - **G4 cut `v1.0`** — owner release action. Tagging `v*` triggers the public goreleaser release workflow (outward-facing + irreversible); locked decision #4 reserves the release/public-repo flip for the owner. All release plumbing (goreleaser, `.deb`/`.rpm`, LICENSE, installer) is in place and `release-dryrun` is green on every PR — the owner just runs `git tag v1.0.0 && git push origin v1.0.0`.
