@@ -28,6 +28,14 @@ archives:
   - id: default
     formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    # Ship the license, the Apache-required NOTICE, and the quickstart in the
+    # tarball. goreleaser's defaults bundle LICENSE*/README* but NOT NOTICE.
+    files:
+      - LICENSE
+      - NOTICE
+      - README.md
+      - src: docs/QUICKSTART.md
+        dst: docs
 
 checksum:
   name_template: "checksums.txt"
@@ -45,6 +53,11 @@ nfpms:
     description: "Docker-based dev environments with infrastructure shared across projects"
     license: "Apache-2.0"
     bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/devstack/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/devstack/NOTICE
 
 snapshot:
   version_template: "{{ incpatch .Version }}-dev-{{ .ShortCommit }}"
