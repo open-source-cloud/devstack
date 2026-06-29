@@ -79,7 +79,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 ### M7 GA (rolling)
 - [x] G1 integration lane (`//go:build integration`) — **DONE** (PR #17, `9b6dfca`); CI overhaul + `tests/` folder (functional + daemon e2e) — **DONE** (PR #18, `79f4eef`)
 - [ ] G2 macOS arm64 CI runner — TODO
-- [~] G3 docs — **PARTIAL**: QUICKSTART + TROUBLESHOOTING (PR #43). Remaining: migration + threat-model.
+- [x] G3 docs — **DONE**: QUICKSTART + TROUBLESHOOTING (PR #43) + THREAT-MODEL + MIGRATION (this PR). (Automated `import` field-mapping doc follows X9 / the devdock schema.)
 - [ ] G4 goreleaser tap + `.deb`/`.rpm` + Apache LICENSE + tag `v1.0` — partial (LICENSE done)
 - [ ] G5 two-terminal race tests — TODO  *(unblocked: C5 in; add to `tests/e2e` behind DEVSTACK_E2E)*
 
