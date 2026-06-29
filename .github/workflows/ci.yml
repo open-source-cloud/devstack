@@ -87,6 +87,33 @@ jobs:
       - name: determinism (byte-identical generation)
         run: make determinism
 
+  installer:
+    # Lints the curl|sh installer so a broken install path is caught before release.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck install.sh
+        run: shellcheck install.sh
+      - name: POSIX sh syntax
+        run: sh -n install.sh
+
+  release-dryrun:
+    # Proves the full release pipeline (4 CGO-free targets + archives + checksums
+    # + .deb/.rpm) builds, without tagging — so a tag push never fails late.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+
   # Placeholder lanes wired as their milestones land:
   #  - schema-drift: JSON-Schema ↔ Go-struct round-trip check (M1)
   #  - integration: testcontainers-go / dind lane behind a build tag (M7)

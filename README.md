@@ -18,7 +18,22 @@ A developer working across 8 microservices today runs 8 Postgres containers, 8 R
 
 ## Status
 
-🚧 **M0 foundations implemented; design ongoing.** The spine is in place and green (`make ci`): the CLI tree + `argv[0]` aliasing, the `flock` cross-process lock, the SQLite ledger, XDG/WSL2 handling, a read-only Docker client, and a real `doctor` preflight. The rest of the surface is spec-driven (see the doc index). Try it: `make build && make smoke`.
+🚧 **M0 foundations + M1 pipeline implemented; design ongoing.** Green on `make ci` + `make determinism`: the CLI tree + `argv[0]` aliasing, the `flock` cross-process lock, the SQLite ledger, XDG/WSL2 handling, a read-only Docker client + `doctor` preflight, the two-file config loader, and the full **templating + generation pipeline** (`config validate/show`, `generate`, `template list/lint/test/init`). M2 (shared-service lifecycle) is next. The rest is spec-driven (see the doc index). Try it: `make build && make smoke`.
+
+## Install
+
+```bash
+# Latest release (Linux/macOS, amd64/arm64; on Windows use WSL2):
+curl -fsSL https://raw.githubusercontent.com/open-source-cloud/devstack/main/install.sh | sh
+
+# Pin a version, choose a dir, or install argv[0] aliases:
+DEVSTACK_VERSION=v0.1.0 DEVSTACK_INSTALL_DIR=/usr/local/bin DEVSTACK_ALIASES="rq uranus" \
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/open-source-cloud/devstack/main/install.sh)"
+```
+
+The installer detects your OS/arch, downloads the matching release archive from
+[GitHub Releases](https://github.com/open-source-cloud/devstack/releases), **verifies its SHA-256
+checksum**, and installs to `$XDG_BIN_HOME` (or `~/.local/bin`). Or build from source: `make install`.
 
 ## How it works (one paragraph)
 
@@ -61,9 +76,8 @@ A developer working across 8 microservices today runs 8 Postgres containers, 8 R
 ## Quickstart (target UX — not yet implemented)
 
 ```bash
-# Install (one of)
-brew install <org>/tap/devstack
-curl -sSL https://.../install.sh | sh
+# Install (see the Install section above)
+curl -fsSL https://raw.githubusercontent.com/open-source-cloud/devstack/main/install.sh | sh
 
 # In a workspace repo containing workspace.yaml:
 devstack doctor              # check docker, compose>=2.20, git>=2.30, ports, trust store
