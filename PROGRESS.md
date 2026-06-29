@@ -68,7 +68,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 ### M6 (saga completion + glue)
 - [x] X1 config completion — **DONE** (PR #27, `1c77d44`)
 - [x] X2 `internal/health` full DAG — **DONE** (PR #37: BuildGraph/Cycle/Waves/RequireHealthchecks)
-- [ ] X3 hooks full — TODO  *(ready: X1,C4 in)*
+- [~] X3 hooks full — **PARTIAL**: workspace + project preUp/postUp wired into the saga (PR #46). Remaining: firstRun/postPull (need provision scope_key) + --skip-hooks/--force-hooks flags.
 - [ ] X4 profiles/selective-up — TODO  *(ready: X1,X2 in)*
 - [ ] X5 orchestrate completion — BLOCKED (X2,X3,X4)
 - [~] X6 `internal/doctor` full matrix + `--fix` — **PARTIAL**: trust probe (PR #33) + dns /etc/hosts probe (PR #35). Remaining: shared-ledger probe + safe `--fix`.
@@ -105,3 +105,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **X2 + S5-keygen merged** (PRs #37, #39) — the health dependency DAG (cycles/waves/healthy-needs-healthcheck) and `secrets keygen` (offline age keypair via filippo.io/age, pairs with the S2 SOPS+age provider). Added the first new runtime dep (filippo.io/age, pure-Go; CI govulncheck clean — local go1.26.0 stdlib advisories do not apply to CI Go 1.25.x). **39 PRs merged.** Frontier: S3/S4/S6, S5-login(keyring), provision saga phase, N5 trust saga phase, X3/X4/X5/X7/X9, G2–G5.
 - (night 2 cont.) **S6-generate merged** (PR #41) — `secret://` values in env.raw/prefixed now emit valueless compose keys (no ref/value in generated files), with a leak test. Remaining S6: the saga secrets phase (collect refs → batched Resolve → Compose.Env). **41 PRs merged.** Frontier: S3/S4, S5-login, S6-saga, provision phase, N5 trust saga, X3/X4/X5/X7/X9, G2–G5.
 - (night 2 cont.) **G3-docs, S6-saga merged** (PRs #43–44) — quickstart/troubleshooting docs, and the **M4 capstone**: the up sagas secrets phase resolves secret:// refs (batched per provider) and injects values via the compose-up process env — values never on disk (§7.5), proven by tests. **44 PRs merged.** M4 now: S1,S2,S6 done; S3/S4 (cloud providers) + S5-login (keyring) remain. Frontier: S3/S4, S5-login, provision saga phase, N5 trust saga, X3/X4/X5/X7/X9, G2/G4/G5.
+- (night 2 cont.) **X3-hooks merged** (PR #46) — full hook ordering in the saga (workspace preUp → per-project preUp→up→postUp → workspace postUp) via a generalized hookPhase. **46 PRs merged.** Frontier: S3/S4, S5-login, provision saga phase (unblocks firstRun + per-project DB isolation), N5 trust saga, X4/X5/X7/X9, G2/G4/G5.
