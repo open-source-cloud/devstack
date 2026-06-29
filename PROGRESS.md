@@ -71,7 +71,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [ ] X3 hooks full — TODO  *(ready: X1,C4 in)*
 - [ ] X4 profiles/selective-up — TODO  *(ready once X2 lands; X1 in)*
 - [ ] X5 orchestrate completion — BLOCKED (X2,X3,X4)
-- [~] X6 `internal/doctor` full matrix + `--fix` — **PARTIAL**: trust probe added (PR #33). Remaining: dns/shared probes + safe `--fix`.
+- [~] X6 `internal/doctor` full matrix + `--fix` — **PARTIAL**: trust probe (PR #33) + dns /etc/hosts probe (PR #35). Remaining: shared-ledger probe + safe `--fix`.
 - [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (S5,X6)
 - [x] X8 self-update notifier — **DONE** (PR #25, `28c4a78`)
 - [ ] X9 `internal/migrate` + `import` — TODO
