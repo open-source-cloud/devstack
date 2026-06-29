@@ -69,8 +69,8 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [x] X1 config completion — **DONE** (PR #27, `1c77d44`)
 - [x] X2 `internal/health` full DAG — **DONE** (PR #37: BuildGraph/Cycle/Waves/RequireHealthchecks)
 - [~] X3 hooks full — **PARTIAL**: workspace + project preUp/postUp wired into the saga (PR #46). Remaining: firstRun/postPull (need provision scope_key) + --skip-hooks/--force-hooks flags.
-- [ ] X4 profiles/selective-up — TODO  *(ready: X1,X2 in)*
-- [ ] X5 orchestrate completion — BLOCKED (X2,X3,X4)
+- [x] X4 profiles/selective-up — **DONE** (PR #53: internal/profile.Resolve — Q-PROFILE resolved). Saga --profile wiring is X5.
+- [ ] X5 orchestrate completion — TODO  *(ready: X2,X3,X4 in; wire profile slicing + DAG-pruned health into the saga)*
 - [x] X6 `internal/doctor` full matrix + `--fix` — **DONE** (trust/dns/shared probes PRs #33/#35/#48 + safe reconcile `--fix` PR #49)
 - [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (S5,X6)
 - [x] X8 self-update notifier — **DONE** (PR #25, `28c4a78`)
@@ -108,3 +108,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **X3-hooks merged** (PR #46) — full hook ordering in the saga (workspace preUp → per-project preUp→up→postUp → workspace postUp) via a generalized hookPhase. **46 PRs merged.** Frontier: S3/S4, S5-login, provision saga phase (unblocks firstRun + per-project DB isolation), N5 trust saga, X4/X5/X7/X9, G2/G4/G5.
 - (night 2 cont.) **X6 complete** (PRs #48–49) — shared-ledger doctor probe + safe `doctor --fix` (non-destructive reconcile). doctor now has the full matrix (working-dir/fs/daemon/compose/git/state/trust/dns/shared) + a safe fix. **49 PRs merged.** Remaining (flagged/large/external-dep): provision saga phase (host-port coupling — flagged design call, D8 pgx-from-host), S3/S4 cloud providers (aws-sdk/infisical deps), S5-login (keyring), X4 (Q-PROFILE fork), X5 (needs provision), X7 (teardown), X9 (devdock format), N5 trust saga, G2/G5.
 - (night 2 cont.) **N5 merged — M5 networking COMPLETE** (PR #51) — fenced trust phase in the up saga (opt-in mkcert install when httpsLocal; never aborts up). M5 N1–N5 all done. **51 PRs merged.** Remaining frontier (all flagged / heavy-dep / large-scope / needs-fresh-context): provision saga phase (D8 pgx host-port — flagged design call), S3/S4 (aws-sdk/infisical deps + localstack), S5-login (keyring), X4 (Q-PROFILE fork), X5 (needs provision+X4), X7 (teardown), X9 (devdock format), G2 (macOS CI), G5 (two-terminal race e2e).
+- (night 2 cont.) **X4 merged** (PR #53) — the selective-up profile resolver (internal/profile.Resolve; Q-PROFILE RESOLVED = both planes unioned, `all` default). **52 PRs merged.** X5 (saga --profile slicing + DAG-pruned health) now ready. Remaining: X5, X7 (teardown), provision phase (flagged D8 host-port), S3/S4 (deps+services), S5-login (keyring), X9 (devdock format), G2 (macOS CI), G5 (race e2e).
