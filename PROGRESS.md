@@ -25,10 +25,26 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 - [x] C3b `internal/health` thin poller — **DONE** (PR #4, `fa338aa`)
 - [x] C3c generate emits `healthcheck:` + intra-project `depends_on` — **DONE** (PR #6, `a6f3195`)
 - [x] C4  `internal/hooks` thin runner + `hook_run` CRUD — **DONE** (PR #5, `de08588`)
-- [ ] C5  `internal/orchestrate` core saga — TODO  *(ready: C1,C2,C3b,C4 all merged)*
-- [ ] C6  CLI `up`/`down` — BLOCKED (C5)
-- [ ] C7  CLI `status` — BLOCKED (C5,C3b)
-- [ ] C8  `shared gc` + `doctor --rebuild-state` — TODO  *(ready: C2 merged)*
+- [x] C5  `internal/orchestrate` core saga — **DONE** (C5a engine PR #8 `cb128b4`; C5b wiring PR #9 `301061a`)
+- [x] C6  CLI `up`/`down` — **DONE** (PR #10, `855488f`) — verified e2e vs real Engine 29.5.3
+- [x] C7  CLI `status` — **DONE** (PR #11, `92769be`)
+- [x] C8  `shared gc` + `doctor --rebuild-state` — **DONE** (PR #12, `c34fb4b`)
+
+**M2-remainder COMPLETE.** `up`→network→shared(health-gated)→generate→compose-up→hooks
+proven green end-to-end against the host daemon (then torn down); re-run skips
+satisfied phases; `--json` matches the spec contract; `down` decrements refs;
+`shared gc`/`doctor --rebuild-state` maintain the ledger.
+
+**Deferred from C5 (flagged, slot in as more saga phases — no engine change):**
+- **provision** phase — needs the shared-Postgres **host-port coupling** (pgx
+  connects from the host; default is no published ports). Decision is known
+  (ledger-allocated published port wired into generate + the saga); it's the next
+  M2 follow-up. Until then projects use the shared engine's root creds.
+- **clone** (gitx), **secrets** (M4/S6), **trust** (N5), **firstRun** hooks
+  (need the provisioned-volume scope_key) — each adds one phase.
+- **Saga daemon e2e in CI** — needs **G1**'s isolation harness (parameterized
+  `devstack-it-<pid>` network/prefix; the saga must never touch a real
+  `devstack_shared`). Unit wiring is mock-tested; e2e was verified manually.
 
 ### M4 secrets (parallel track)
 - [ ] S1 core (`secret://` parser, Provider iface, Registry, batched Resolve) — TODO
@@ -71,3 +87,4 @@ and verification. **Merge model:** PR-per-chunk, auto-merge on green CI.
 - (init) scaffolding: PROGRESS.md + Apache-2.0 LICENSE/NOTICE + nightly cron + repo auto-merge enabled.
 - (night 1) **C1 merged** (PR #1, `9900b87`) — `saga_phase` v2 migration + CRUD, race-clean, merge-on-green proven. Next ready (parallel): C2, C3a, S1, N1..N4, X1, X8, X9, G1.
 - (night 2) **C2, C3a, C3b, C3c, C4 merged** (PRs #2–6) — the entire health/hooks substrate: read-only docker inspect/logs, config health/hooks/dependsOn structs, the `internal/health` poller, generate's compose `healthcheck:`/`depends_on` lowering, and the `internal/hooks` runner + `hook_run` ledger. Each green via `make ci`+determinism+`-tags=integration` against the local Engine 29.5.3; PR-poll-then-merge enforces the green gate (main is unprotected, so plain `--auto` would merge instantly). **C5 (core saga) is now unblocked** — its deps C1,C2,C3b,C4 are all in. Also ready: C8, S1, N1..N4, X1, X8, X9, G1.
+- (night 2 cont.) **C5a, C5b, C6, C7, C8 merged** (PRs #8–12) — **M2-remainder complete**. The resumable/compensating orchestrate engine + the real up phases, the `up`/`down`/`status` CLI, and `shared gc`/`doctor --rebuild-state`. Verified the whole `up` saga end-to-end against the host daemon (shared-postgres came up *healthy* via the cross-project gate; re-run all-skips; `--json` matched; `down` dropped refs) then fully tore it down — the machine was clean before and after. Process note: poll ALL ≥9 PR checks to green before merge (an early poll once merged C6 before the slow checks registered — it passed retroactively, but the lesson stuck). **Next ready (all parallel now C5 is in): the provision saga phase (host-port coupling), S1 secrets core, N1–N4 networking, X1 config completion, X8 self-update notifier, X9 migrate/import, G1 integration lane.**
