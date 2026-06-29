@@ -7,7 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-source-cloud/devstack/internal/config"
+	"github.com/open-source-cloud/devstack/internal/dns"
 	"github.com/open-source-cloud/devstack/internal/docker"
+	"github.com/open-source-cloud/devstack/internal/proxy"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/trust"
 	"github.com/open-source-cloud/devstack/internal/xdg"
@@ -133,6 +136,26 @@ func runDoctor(cmd *cobra.Command) []docker.Check {
 		v, _ := db.SchemaVersion()
 		db.Close()
 		checks = append(checks, docker.Check{Name: "state ledger", Status: docker.StatusOK, Detail: fmt.Sprintf("schema v%d @ %s", v, ctxName)})
+	}
+
+	// DNS entries for *.localhost (spec 05) — best-effort, only when the current
+	// dir is a workspace with a configured proxy. Never fatal (opt-in).
+	if m, err := config.Load(cwd); err == nil && proxy.Enabled(m) {
+		var hosts []string
+		for _, r := range proxy.BuildRoutes(m) {
+			hosts = append(hosts, r.Host)
+		}
+		if missing, err := dns.Missing(dns.DefaultHostsPath, hosts); err == nil {
+			if len(missing) == 0 {
+				checks = append(checks, docker.Check{Name: "dns (/etc/hosts)", Status: docker.StatusOK, Detail: fmt.Sprintf("%d *.localhost host(s) resolved", len(hosts))})
+			} else {
+				checks = append(checks, docker.Check{
+					Name: "dns (/etc/hosts)", Status: docker.StatusWarn,
+					Detail:      fmt.Sprintf("%d of %d *.localhost host(s) missing", len(missing), len(hosts)),
+					Remediation: "run `sudo devstack dns setup`",
+				})
+			}
+		}
 	}
 
 	// Local-CA trust (spec 05) — opt-in, so never fatal: report readiness as a
