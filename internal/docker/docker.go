@@ -35,8 +35,39 @@ type Client interface {
 	// ContextName returns the active Docker context the client is bound to;
 	// this keys the state ledger.
 	ContextName() string
+	// EnsureNetwork idempotently ensures an external bridge network named `name`
+	// exists (inspect → create), applying labels on creation. devstack owns this
+	// network's lifecycle because Compose refuses to create external networks
+	// (ARCHITECTURE §4). Safe to call concurrently under the flock.
+	EnsureNetwork(ctx context.Context, name string, labels map[string]string) error
+	// NetworkExists reports whether a network with the exact name exists.
+	NetworkExists(ctx context.Context, name string) (bool, error)
+	// ListManaged returns containers carrying ALL of the given labels, with
+	// All=true (so stopped containers are visible) and compose one-offs excluded
+	// (DECISIONS D5) — the basis for ref-count reconciliation from live reality.
+	ListManaged(ctx context.Context, labels map[string]string) ([]Container, error)
 	// Close releases the underlying connection.
 	Close() error
+}
+
+// Container is the read-only projection of a container devstack cares about.
+type Container struct {
+	ID     string
+	Name   string // primary name, leading slash stripped
+	Labels map[string]string
+	State  string // running | exited | created | ...
+	Ports  []PortBinding
+}
+
+// Running reports whether the container is in the running state.
+func (c Container) Running() bool { return c.State == "running" }
+
+// PortBinding is one published host port mapping on a container.
+type PortBinding struct {
+	HostIP        string
+	HostPort      int
+	ContainerPort int
+	Protocol      string // tcp | udp | sctp
 }
 
 // Version is a simple major.minor for tool-version gating.

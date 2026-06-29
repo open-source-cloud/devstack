@@ -9,6 +9,14 @@ type MockClient struct {
 	Server     string
 	PingErr    error
 	VersionErr error
+
+	// Networks is the set of existing network names.
+	Networks map[string]bool
+	// Containers is the in-memory container list ListManaged filters over.
+	Containers []Container
+	// NetworkErr / ListErr force the corresponding op to fail.
+	NetworkErr error
+	ListErr    error
 }
 
 var _ Client = (*MockClient)(nil)
@@ -30,6 +38,49 @@ func (m *MockClient) ContextName() string {
 		return "mock"
 	}
 	return m.Context
+}
+
+func (m *MockClient) EnsureNetwork(_ context.Context, name string, _ map[string]string) error {
+	if m.NetworkErr != nil {
+		return m.NetworkErr
+	}
+	if m.Networks == nil {
+		m.Networks = map[string]bool{}
+	}
+	m.Networks[name] = true
+	return nil
+}
+
+func (m *MockClient) NetworkExists(_ context.Context, name string) (bool, error) {
+	if m.NetworkErr != nil {
+		return false, m.NetworkErr
+	}
+	return m.Networks[name], nil
+}
+
+// ListManaged returns the seeded containers whose labels are a superset of the
+// requested labels (compose one-offs excluded), mirroring the real filter.
+func (m *MockClient) ListManaged(_ context.Context, labels map[string]string) ([]Container, error) {
+	if m.ListErr != nil {
+		return nil, m.ListErr
+	}
+	var out []Container
+	for _, c := range m.Containers {
+		if c.Labels["com.docker.compose.oneoff"] == "True" {
+			continue
+		}
+		match := true
+		for k, v := range labels {
+			if c.Labels[k] != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 func (m *MockClient) Close() error { return nil }
