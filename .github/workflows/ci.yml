@@ -8,12 +8,21 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs on the same ref (fail-fast + CI economy).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # Single enforced Go toolchain floor (DECISIONS, ARCHITECTURE §7.8).
   GO_VERSION: "1.25"
 
 jobs:
-  build-test:
+  # One consolidated lane ordered cheap → expensive so a lint/unit failure stops
+  # before the costly Docker + cross-compile work. actions/setup-go caches the
+  # module + build cache (keyed by go.sum). ubuntu-latest ships Docker, used by
+  # the integration + e2e steps.
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,85 +30,62 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
+          cache: true # GOMODCACHE + GOCACHE, keyed by go.sum
 
+      # --- cheap, high-signal (fail fast) ---
       - name: gofmt
         run: |
           unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "These files are not gofmt-clean:"; echo "$unformatted"; exit 1
           fi
-
       - name: go vet
         run: go vet ./...
-
+      - name: installer lint (shellcheck + POSIX sh)
+        run: |
+          shellcheck --severity=warning install.sh
+          sh -n install.sh
       - name: build (CGO disabled — static binary invariant)
         run: CGO_ENABLED=0 go build ./...
-
-      - name: test -race
+      - name: unit tests -race
         env:
           CGO_ENABLED: "1" # the race detector requires cgo (see Makefile)
         run: go test -race ./...
+      - name: smoke (built binary, end-to-end in an XDG sandbox)
+        run: make smoke
+      - name: determinism (byte-identical generation)
+        run: make determinism
 
-  govulncheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
+      # --- medium ---
+      - name: cross-compile (4 CGO-free release targets)
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            echo "→ $t"
+            GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null ./cmd/devstack
+          done
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-  cross-compile:
-    # Proves the 4 release targets build CGO-free from one Linux runner.
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux, darwin]
-        goarch: [amd64, arm64]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-      - name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+      # --- expensive, real-daemon (Docker on ubuntu-latest) ---
+      - name: docker available
+        run: docker version
+      - name: integration tests (-tags=integration -race)
         env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -o /dev/null ./cmd/devstack
+          CGO_ENABLED: "1"
+        run: go test -tags=integration -race ./...
+      - name: e2e tests (-tags=e2e, real up/down via the CLI)
+        env:
+          DEVSTACK_E2E: "1" # ephemeral runner: safe to mutate the shared stack
+        run: go test -tags=e2e ./tests/e2e/...
 
-  determinism:
-    # Asserts the generation pipeline is byte-identical across runs/paths
-    # (spec 02 acceptance #3, ARCHITECTURE §3) — the rebuild-hash and any
-    # "commit generated artifacts" decision depend on it.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-      - name: determinism (byte-identical generation)
-        run: make determinism
-
-  installer:
-    # Lints the curl|sh installer so a broken install path is caught before release.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: shellcheck install.sh
-        run: shellcheck --severity=warning install.sh
-      - name: POSIX sh syntax
-        run: sh -n install.sh
-
+  # The full release pipeline (4 CGO-free targets + archives + checksums +
+  # .deb/.rpm) — expensive and independent, so it runs in parallel and never
+  # gates the fast feedback above. Needs full history for goreleaser's versioning.
   release-dryrun:
-    # Proves the full release pipeline (4 CGO-free targets + archives + checksums
-    # + .deb/.rpm) builds, without tagging — so a tag push never fails late.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -109,31 +95,12 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           check-latest: true
+          cache: true
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --snapshot --clean
 
-  integration:
-    # Real-daemon lane (G1): runs the //go:build integration tests against
-    # ubuntu-latest's Docker (read-only inspect/logs, health polling, compose
-    # exec). Tests self-isolate with per-run names (devstack-it-<pid>) + t.Cleanup
-    # and skip gracefully if the daemon is unreachable.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          check-latest: true
-      - name: docker available
-        run: docker version
-      - name: integration tests (-tags=integration -race)
-        env:
-          CGO_ENABLED: "1" # race detector needs cgo
-        run: go test -tags=integration -race ./...
-
   # Placeholder lanes wired as their milestones land:
-  #  - schema-drift: JSON-Schema ↔ Go-struct round-trip check (M1)
   #  - macos: macos-14 arm64 preflight-only (G2)
   #  - config-conformance: golden workspace exercising every schema field
