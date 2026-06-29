@@ -1,10 +1,13 @@
 package docker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
 	moby "github.com/moby/moby/client"
 )
 
@@ -97,6 +100,56 @@ func (m *mobyClient) ListManaged(ctx context.Context, labels map[string]string) 
 		out = append(out, c)
 	}
 	return out, nil
+}
+
+// ContainerInspect returns the read-only health/state projection for one
+// container (spec 10). Health is "" when the container declares no healthcheck
+// (the State.Health block is nil), distinguishing "no signal" from "starting".
+func (m *mobyClient) ContainerInspect(ctx context.Context, id string) (ContainerDetails, error) {
+	res, err := m.cli.ContainerInspect(ctx, id, moby.ContainerInspectOptions{})
+	if err != nil {
+		return ContainerDetails{}, fmt.Errorf("inspect container %q: %w", id, err)
+	}
+	c := res.Container
+	d := ContainerDetails{
+		ID:   c.ID,
+		Name: strings.TrimPrefix(c.Name, "/"),
+	}
+	if c.Config != nil {
+		d.Labels = c.Config.Labels
+	}
+	if c.State != nil {
+		d.State = string(c.State.Status)
+		d.Running = c.State.Running
+		d.ExitCode = c.State.ExitCode
+		if c.State.Health != nil {
+			d.Health = HealthStatus(c.State.Health.Status)
+		}
+	}
+	return d, nil
+}
+
+// ContainerLogs returns up to `tail` trailing lines of a container's combined
+// stdout+stderr (spec 10 fail-fast diagnostics). The Engine multiplexes the two
+// streams for non-TTY containers (the devstack default — compose runs services
+// without a TTY); stdcopy demuxes both into one buffer, preserving frame order.
+func (m *mobyClient) ContainerLogs(ctx context.Context, id string, tail int) (string, error) {
+	opts := moby.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
+	if tail > 0 {
+		opts.Tail = strconv.Itoa(tail)
+	}
+	rc, err := m.cli.ContainerLogs(ctx, id, opts)
+	if err != nil {
+		return "", fmt.Errorf("logs for container %q: %w", id, err)
+	}
+	defer func() { _ = rc.Close() }()
+	var buf bytes.Buffer
+	// Both streams demux into one buffer so stdout/stderr stay interleaved in the
+	// order the daemon emitted them — the most faithful tail for a diagnostic.
+	if _, err := stdcopy.StdCopy(&buf, &buf, rc); err != nil {
+		return "", fmt.Errorf("read logs for container %q: %w", id, err)
+	}
+	return buf.String(), nil
 }
 
 // primaryName returns the first container name with the leading '/' stripped.
