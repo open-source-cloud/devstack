@@ -43,7 +43,9 @@ func NewRootCmd(opts Options) *cobra.Command {
 	root := &cobra.Command{
 		Use:   brand.Name,
 		Short: "Docker-based dev environments with infrastructure shared across projects",
-		Long: "devstack manages Docker-based development environments and shares infrastructure\n" +
+		// The version is shown on top of the help banner (fang renders Long first).
+		Long: brand.Name + " " + version.Version + "\n\n" +
+			"devstack manages Docker-based development environments and shares infrastructure\n" +
 			"(one warm Postgres/Redis/MinIO) across many project stacks in a workspace.",
 		Version:       version.String(),
 		SilenceUsage:  true, // fang renders errors; don't dump usage on every failure
@@ -79,9 +81,15 @@ func NewRootCmd(opts Options) *cobra.Command {
 	return root
 }
 
-// Execute wraps the root command with fang and runs it.
+// Execute wraps the root command with fang and runs it. The version/commit are
+// passed explicitly because fang's `-v`/`--version` derives from debug build info
+// otherwise — which renders "unknown (built from source)" for an ldflags-stamped
+// binary instead of our actual version.
 func Execute(ctx context.Context, root *cobra.Command) error {
-	return fang.Execute(ctx, root)
+	return fang.Execute(ctx, root,
+		fang.WithVersion(version.Version),
+		fang.WithCommit(version.Commit),
+	)
 }
 
 // setupLogging configures slog based on the global flags. --debug → Debug level
