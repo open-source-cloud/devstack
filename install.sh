@@ -127,6 +127,7 @@ fi
 case ":${PATH}:" in
 	*":${install_dir}:"*) ;;
 	*) warn "${install_dir} is not on your PATH — add it, e.g.:"
+	   # shellcheck disable=SC2016  # the literal $PATH is intentional in this hint
 	   printf '       export PATH="%s:$PATH"\n' "$install_dir" >&2 ;;
 esac
 
