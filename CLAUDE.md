@@ -179,18 +179,22 @@ implemented and green (`make ci` + `make determinism`):
   `(engine,major)`, ref-counting register/unregister, self-healing reconcile from
   live containers, `shared status` projection, and host-port allocation (ledger ∪
   bind-test ∪ Docker-published union). Unit+race tested with the mock client.
+- `internal/git` *(M3, gitx)* — hardened system-git wrapper (D9): clone/fetch/
+  pull/status via `--porcelain=v2 -z`, shorthand URL expansion, GIT_ASKPASS token
+  shim. CLI `ws clone/sync/status/git` — bounded-parallel (errgroup), plain/JSON
+  dual-mode, `--check`. Integration-tested against real temp repos.
 - `internal/alias` — registry + symlink installer; `internal/version` — ldflags target.
 - CI (`.github/workflows/`: ci + release + installer + release-dryrun + determinism),
   `.goreleaser.yaml`, `Makefile`, `install.sh` (curl|sh installer). Tagged **v0.1.0**.
 
 **Build order follows the ROADMAP**: M0 spine ✅ → M1 config+templating+generation ✅
-→ M2 shared services + workspace lifecycle (the differentiator) — **core landed**
-(ledger CRUD, docker network/compose driver, provisioning, ref-counting/reconcile,
-`shared status`); **remaining**: the `up`/`down` saga + `shared gc` (daemon
-orchestration — needs the dind/integration lane to build responsibly), and one
-design call to resolve first: **provisioning runs pgx from the host, so the shared
-Postgres needs a ledger-allocated published host port** (the default is no host
-ports) — wire that into generation + the up saga. → M3 multi-repo git → secrets
+→ M2 shared services + workspace lifecycle — **core landed** (ledger CRUD, docker
+network/compose driver, provisioning, ref-counting/reconcile, `shared status`);
+**remaining**: the `up`/`down` saga + `shared gc` (daemon orchestration — needs the
+dind/integration lane to build responsibly), plus one design call: **provisioning
+runs pgx from the host, so the shared Postgres needs a ledger-allocated published
+host port** (default is no host ports) — wire that into generation + the up saga.
+→ M3 multi-repo git ✅ (`internal/git` + `ws clone/sync/status/git`) → secrets
 (M4) / networking (M5) / onboarding+doctor+health+hooks (M6) / GA (M7).
 Anything that mutates shared state goes through `internal/lock` from its first commit.
 

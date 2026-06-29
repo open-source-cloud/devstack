@@ -18,7 +18,7 @@ A developer working across 8 microservices today runs 8 Postgres containers, 8 R
 
 ## Status
 
-🚧 **M0 foundations + M1 pipeline implemented; design ongoing.** Green on `make ci` + `make determinism`: the CLI tree + `argv[0]` aliasing, the `flock` cross-process lock, the SQLite ledger, XDG/WSL2 handling, a read-only Docker client + `doctor` preflight, the two-file config loader, and the full **templating + generation pipeline** (`config validate/show`, `generate`, `template list/lint/test/init`). M2 (shared-service lifecycle) is next. The rest is spec-driven (see the doc index). Try it: `make build && make smoke`.
+🚧 **M0–M1 done; M2 core + M3 landed; design ongoing.** Green on `make ci` + `make determinism`: the CLI tree + `argv[0]` aliasing, the `flock` lock, the SQLite ledger, XDG/WSL2 handling, the read-only Docker client + `doctor`, the two-file config loader, the full **templating + generation pipeline** (`generate`, `template …`), the **M2 differentiator core** (ledger ref-counting/reconcile, provisioning, `shared status`), and **M3 multi-repo git** (`ws clone/sync/status/git`). Remaining for M2: the `up`/`down` daemon saga. The rest is spec-driven (see the doc index). Try it: `make build && make smoke`.
 
 ## Install
 
