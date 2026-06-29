@@ -71,7 +71,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [~] X3 hooks full — **PARTIAL**: workspace + project preUp/postUp wired into the saga (PR #46). Remaining: firstRun/postPull (need provision scope_key) + --skip-hooks/--force-hooks flags.
 - [ ] X4 profiles/selective-up — TODO  *(ready: X1,X2 in)*
 - [ ] X5 orchestrate completion — BLOCKED (X2,X3,X4)
-- [~] X6 `internal/doctor` full matrix + `--fix` — **PARTIAL**: trust probe (PR #33) + dns /etc/hosts probe (PR #35). Remaining: shared-ledger probe + safe `--fix`.
+- [x] X6 `internal/doctor` full matrix + `--fix` — **DONE** (trust/dns/shared probes PRs #33/#35/#48 + safe reconcile `--fix` PR #49)
 - [ ] X7 `workspace destroy`/`uninstall` — BLOCKED (S5,X6)
 - [x] X8 self-update notifier — **DONE** (PR #25, `28c4a78`)
 - [ ] X9 `internal/migrate` + `import` — TODO
@@ -106,3 +106,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **S6-generate merged** (PR #41) — `secret://` values in env.raw/prefixed now emit valueless compose keys (no ref/value in generated files), with a leak test. Remaining S6: the saga secrets phase (collect refs → batched Resolve → Compose.Env). **41 PRs merged.** Frontier: S3/S4, S5-login, S6-saga, provision phase, N5 trust saga, X3/X4/X5/X7/X9, G2–G5.
 - (night 2 cont.) **G3-docs, S6-saga merged** (PRs #43–44) — quickstart/troubleshooting docs, and the **M4 capstone**: the up sagas secrets phase resolves secret:// refs (batched per provider) and injects values via the compose-up process env — values never on disk (§7.5), proven by tests. **44 PRs merged.** M4 now: S1,S2,S6 done; S3/S4 (cloud providers) + S5-login (keyring) remain. Frontier: S3/S4, S5-login, provision saga phase, N5 trust saga, X3/X4/X5/X7/X9, G2/G4/G5.
 - (night 2 cont.) **X3-hooks merged** (PR #46) — full hook ordering in the saga (workspace preUp → per-project preUp→up→postUp → workspace postUp) via a generalized hookPhase. **46 PRs merged.** Frontier: S3/S4, S5-login, provision saga phase (unblocks firstRun + per-project DB isolation), N5 trust saga, X4/X5/X7/X9, G2/G4/G5.
+- (night 2 cont.) **X6 complete** (PRs #48–49) — shared-ledger doctor probe + safe `doctor --fix` (non-destructive reconcile). doctor now has the full matrix (working-dir/fs/daemon/compose/git/state/trust/dns/shared) + a safe fix. **49 PRs merged.** Remaining (flagged/large/external-dep): provision saga phase (host-port coupling — flagged design call, D8 pgx-from-host), S3/S4 cloud providers (aws-sdk/infisical deps), S5-login (keyring), X4 (Q-PROFILE fork), X5 (needs provision), X7 (teardown), X9 (devdock format), N5 trust saga, G2/G5.
