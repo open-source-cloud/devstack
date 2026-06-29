@@ -91,6 +91,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newSharedCmd(g),
 		newWsCmd(g),
 		newWorkspaceCmd(g),
+		newUninstallCmd(g),
 		newSelfCmd(g),
 		newStoreCmd(g),
 		newAliasCmd(g),
