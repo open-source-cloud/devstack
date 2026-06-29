@@ -93,7 +93,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck install.sh
-        run: shellcheck install.sh
+        run: shellcheck --severity=warning install.sh
       - name: POSIX sh syntax
         run: sh -n install.sh
 

@@ -127,8 +127,8 @@ fi
 case ":${PATH}:" in
 	*":${install_dir}:"*) ;;
 	*) warn "${install_dir} is not on your PATH — add it, e.g.:"
-	   # shellcheck disable=SC2016  # the literal $PATH is intentional in this hint
-	   printf '       export PATH="%s:$PATH"\n' "$install_dir" >&2 ;;
+	   # \$PATH is an escaped literal here (printed for the user to copy), not a variable.
+	   printf "       export PATH=\"%s:\$PATH\"\n" "$install_dir" >&2 ;;
 esac
 
 printf '\n%s%s installed.%s run %s%s doctor%s to verify your environment.\n' \
