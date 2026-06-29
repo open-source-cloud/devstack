@@ -52,11 +52,11 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 
 ### M4 secrets (parallel track)
 - [x] S1 core (`secret://` parser, Provider iface, Registry, batched Resolve) — **DONE** (PR #14, `bdba2ab`)
-- [ ] S2 SOPS+age — TODO  *(ready; prefer shelling to the `sops` binary — single static binary, no KMS-SDK bloat; integration test build-tagged)*
-- [ ] S3 AWS SM+SSM — BLOCKED (S1)
-- [ ] S4 Infisical (gated) — BLOCKED (S1)
-- [ ] S5 keyring + `secrets login/keygen` — BLOCKED (S1)
-- [ ] S6 post-render resolve + env injection + leak test — BLOCKED (S1,S2,C5)
+- [x] S2 SOPS+age — **DONE** (PR #31, shells `sops -d`, batch-per-file, RegisterBuiltins)
+- [ ] S3 AWS SM+SSM — TODO  *(ready: S1 in; localstack-testable)*
+- [ ] S4 Infisical (gated) — TODO  *(ready: S1 in)*
+- [ ] S5 keyring + `secrets login/keygen` — TODO  *(ready: S1 in)*
+- [ ] S6 post-render resolve + env injection + leak test — TODO  *(ready: S1,S2,C5 in — the secrets saga phase + the §7.5 leak test)*
 
 ### M5 networking (parallel track)
 - [x] N1 `internal/proxy` (Caddy route table + labels) — **DONE** (PR #15, `50e6686`)
@@ -99,3 +99,4 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - (night 2 cont.) **X8 merged** (PR #25, `28c4a78`) — `selfupdate.Notifier`: throttled (≤1 network check/24h, XDG-cached), fail-silent, dev-build/`--json`/`--quiet`/`DEVSTACK_NO_UPDATE_NOTIFIER`-aware update notice wired into the CLI root's `PersistentPostRun`. **Session tally: 25 PRs merged, all green** — M2 complete (C1–C8), M4 S1, M5 N1–N4, M6 X8, M7 G1 + the consolidated CI/`tests` overhaul. **Remaining for `done`: N5; S2–S6; the provision saga phase (host-port coupling, the flagged M2 follow-up); X1–X7+X9 (M6); G2–G5 (M7).** Next-ready picks: X1 (config completion — unblocks X2/X3/X4), S2 (sops via shelling), X9 (devdock import), N5 (proxy-into-generate + trust saga phase), the provision phase.
 - (night 2 cont.) **X1 merged** (PR #27, `1c77d44`) — config completion: `Service.MemoryMB` + `Workspace.MemoryBudgetMB` (spec 12/18) and `validateProfiles` (groups reference real services; `defaultProfile` names a defined group or reserved `all`), positioned. Unblocks **X2 (health DAG), X3 (hooks full), X6 (doctor matrix)** — all now ready; X4 waits on X2. **27 PRs merged this session.** Remaining for `done`: N5; S2–S6; provision saga phase (host-port coupling); X2–X7+X9; G2–G5.
 - (night 2 cont.) **proxy labels wired into generate** (PR #29, `d0e04e8`, N5 part 1) — `proxy.LabelsForService` → caddy-docker-proxy labels merged onto routed services in `buildProjectService` (no-op when proxy disabled, golden/determinism unchanged). The proxy feature (N1 route table → labels) is now end-to-end. **29 PRs merged this session.** N5 remaining = saga trust phase + doctor trust/dns probes. Broad frontier still open: S2–S6, provision saga phase (host-port coupling), X2/X3/X4/X6/X7/X9, G2–G5.
+- (night 2 cont.) **S2 merged** (PR #31) — SOPS+age secrets provider (shells `sops -d --output-type json`, batch-per-file, `RegisterBuiltins`), fake-runner tested (sops not on the runner yet). **M4 has S1+S2; S3/S4/S5/S6 now ready.** **31 PRs merged this session — M2 complete; M4 S1/S2; M5 N1–N4 + proxy-generate; M6 X1/X8; M7 G1 + CI/tests overhaul.** Remaining for `done`: S3–S6, the provision saga phase (host-port coupling), N5 trust phase + doctor probes, X2/X3/X4/X6/X7/X9, G2–G5.
