@@ -84,6 +84,39 @@ func TestResolveNoConfigDefaultIsAll(t *testing.T) {
 	}
 }
 
+func TestCheckBudgetOptInAndOver(t *testing.T) {
+	m := sliceModel()
+	// No budget configured → never Over, regardless of usage.
+	if CheckBudget(m, Resolve(m, []string{"all"})).Over {
+		t.Error("no memoryBudgetMB → must never report Over")
+	}
+
+	// Give the frontend services memory hints and a tight budget.
+	app := m.Projects["app"]
+	web := app.Services["web"]
+	web.MemoryMB = 800
+	app.Services["web"] = web
+	worker := app.Services["worker"]
+	worker.MemoryMB = 400
+	app.Services["worker"] = worker
+	m.Projects["app"] = app
+	m.Workspace.MemoryBudgetMB = 1000
+
+	// frontend slice = web(800)+worker(400)=1200 > 1000 → Over, both named.
+	b := CheckBudget(m, Resolve(m, []string{"frontend"}))
+	if !b.Over || b.TotalMB != 1200 {
+		t.Fatalf("frontend budget = %+v, want Over with total 1200", b)
+	}
+	if len(b.Services) != 2 {
+		t.Errorf("offenders = %v, want web+worker", b.Services)
+	}
+
+	// core slice = api(no memoryMB)=0 ≤ 1000 → not Over.
+	if CheckBudget(m, Resolve(m, []string{"core"})).Over {
+		t.Error("core slice (0 MB) must be under budget")
+	}
+}
+
 func TestResolveHasAndShared(t *testing.T) {
 	a := Resolve(sliceModel(), []string{"core"})
 	if !a.Has("app", "api") || a.Has("app", "web") {

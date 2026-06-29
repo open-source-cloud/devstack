@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/hooks"
 	"github.com/open-source-cloud/devstack/internal/lock"
 	"github.com/open-source-cloud/devstack/internal/orchestrate"
+	"github.com/open-source-cloud/devstack/internal/profile"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/workspace"
 	"github.com/open-source-cloud/devstack/internal/xdg"
@@ -47,6 +49,15 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 			d.NoHooks = noHooks
 			d.NoPreflight = noPreflight
 			d.Profiles = profiles
+
+			// Memory-budget warning (spec 12 §budget): opt-in — only when the
+			// workspace declares memoryBudgetMB and the active slice exceeds it. Never
+			// fatal; suppressed under --quiet/--json.
+			if !g.Quiet && !g.JSON {
+				if b := profile.CheckBudget(d.Model, profile.Resolve(d.Model, profiles)); b.Over {
+					warnMemoryBudget(cmd.ErrOrStderr(), b)
+				}
+			}
 
 			// Self-healing reconcile before the saga (spec 09): prune ref rows for
 			// projects no longer live. Best-effort — never blocks `up`.
@@ -82,6 +93,16 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 	cmd.Flags().StringArrayVarP(&profiles, "profile", "p", nil,
 		"service slice(s) to start — repeatable & comma-separated (spec 12); empty → defaultProfile or all")
 	return cmd
+}
+
+// warnMemoryBudget prints the spec-12 over-budget warning naming the offending
+// active services and pointing at a lighter slice.
+func warnMemoryBudget(w io.Writer, b profile.Budget) {
+	fmt.Fprintf(w, "[warn]    active profile needs ~%d MB but memoryBudgetMB is %d MB:\n", b.TotalMB, b.BudgetMB)
+	for _, s := range b.Services {
+		fmt.Fprintf(w, "            %s/%s: %d MB\n", s.Project, s.Service, s.MemoryMB)
+	}
+	fmt.Fprintln(w, "          consider a smaller slice, e.g. `--profile minimal`")
 }
 
 // newDownCmd wires `devstack down [project...]` — stop project stacks, run
