@@ -55,7 +55,7 @@ satisfied phases; `--json` matches the spec contract; `down` decrements refs;
 - [x] S2 SOPS+age — **DONE** (PR #31, shells `sops -d`, batch-per-file, RegisterBuiltins)
 - [ ] S3 AWS SM+SSM — TODO  *(ready: S1 in; localstack-testable)*
 - [ ] S4 Infisical (gated) — TODO  *(ready: S1 in)*
-- [~] S5 keyring + `secrets login/keygen` — **PARTIAL**: `secrets keygen` (age keypair, PR #39) done. Remaining: `secrets login` keyring (zalando/go-keyring + WSL2 in-mem fallback).
+- [x] S5 keyring + `secrets login/keygen` — **DONE** (`secrets keygen` PR #39; `secrets login/logout/status` PR #59: zalando/go-keyring `OSKeyring`+`MemKeyring`, `CredentialFor` env→keyring→native, WSL2 no-D-Bus degrade to env-var mode).
 - [x] S6 post-render resolve + env injection + leak test — **DONE** (generate valueless keys PR #41 + saga secrets phase PR #44: collect→Resolve→Compose.Env, value never on disk)
 
 ### M5 networking (parallel track)
