@@ -54,6 +54,7 @@ func RegisterBuiltins(reg *Registry) {
 	reg.RegisterFactory(SopsKind, SopsFactory)
 	reg.RegisterFactory(AWSSecretsManagerKind, AWSFactory)
 	reg.RegisterFactory(AWSSSMKind, AWSFactory)
+	reg.RegisterFactory(InfisicalKind, InfisicalFactory)
 }
 
 func (p *SopsProvider) Name() string { return p.name }
