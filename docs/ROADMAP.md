@@ -73,7 +73,7 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 > Specs: [25](specs/25-release-automation.md) (release automation) · [22](specs/22-init-wizard.md) (init wizard) · [23](specs/23-template-authoring.md) (template authoring) · [24](specs/24-env-ingestion.md) (.env ingestion). All TUIs are Bubble Tea v2 + Charm (`bubbles`/`lipgloss/v2`/`huh/v2`), CGO-free, behind one shared `internal/prompt` theme with a non-TTY/`--json` fallback.
 
 **M8.0 — Release automation + 0.x versioning (the v0.2.0 gate) · 0.75w thin (+0.75w wizard).** ([spec 25](specs/25-release-automation.md))
-- `.svu.yaml` (`v0: true`) + a `tag.yml` workflow: push-to-`main` → `svu next --v0` → push a `v*` tag (owner-gated `RELEASE_TOKEN` at **job** level so the kill-switch `if:` can read it) → the existing `release.yml`/goreleaser on the tag.
+- `.svu.yaml` (`v0: true`) + a single rewritten `release.yml`: push-to-`main` → `svu next --v0` → tag + goreleaser **in one job** using the built-in `GITHUB_TOKEN` (no PAT), gated on the `RELEASE_ENABLED` repo variable; the same workflow also releases a human-cut `v*` tag.
 - Fix the ldflags v-prefix bug (un-mutes the shipped spec-14 self-update/notifier); add a grouped goreleaser changelog (`use: github` + `groups`/`filters`); PR-title conventional-commit lint; CI `v0.*` guard.
 - Optional: the `devstack release` maintainer wizard + an additive `update.channel` (stable|prerelease) knob (extends spec 14, does not redefine it).
 - **Sequence first** — every later item ships through it; the thin slice (~0.75w) is all that is needed to cut v0.2.0.

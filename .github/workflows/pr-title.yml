@@ -1,7 +1,7 @@
 name: PR title
 
 # Conventional-commit lint for PR titles (spec 25). The repo squash-merges, so the
-# PR title becomes the commit subject that svu (tag.yml) reads to compute the next
+# PR title becomes the commit subject that svu (release.yml) reads to compute the next
 # version — an unconventional title silently corrupts version computation. Pure
 # shell, no Node toolchain (consistent with the rest of CI).
 #

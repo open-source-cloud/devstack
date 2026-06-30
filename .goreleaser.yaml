@@ -73,7 +73,7 @@ snapshot:
 changelog:
   # MUST stay `github` (or `git`): `groups`/`filters` below are IGNORED under
   # `github-native`. goreleaser is the SINGLE source of release notes (no second
-  # generator) — it buckets the conventional-commit history pushed by tag.yml.
+  # generator) — it buckets the conventional-commit history at release time.
   use: github
   sort: asc
   groups:
