@@ -61,6 +61,22 @@ Strictly opt-in (explicit first-run prompt, default OFF, one-flag disable, docum
 **13. Remote / cloud shared-services backend · 8w.** ([spec 21](specs/21-remote-shared-backend.md))
 Generalize the shared stack to run on a remote Docker host (DOCKER_HOST/SSH context) or a team "shared dev cluster" — one warm, seeded Postgres for a whole team, zero local DB containers. The ref-counting, per-project provisioning, and DNS/alias model are backend-agnostic; this swaps *where* containers run. Pairs with the tunnel work. *The ambitious devbox/Codespaces-class frontier — correctly deferred until the local model is rock-solid.*
 
+### Beta DX lane (post-M7, ships in the v0.2.x 0.x line)
+
+Surfaced after the M0–M7 build landed (see [PROGRESS](../PROGRESS.md)). These add the **interactive layer the tool has lacked** — there is no TUI in the codebase today — plus the release-engineering glue. They are strictly additive over the shipped substrate and all ship in the **0.x beta line**; none cuts v1.0. Every TUI is built on **Bubble Tea v2 + the Charm plugin stack** (`bubbles`/`lipgloss/v2`/`huh/v2`, all CGO-free) behind one shared `internal/prompt` theme, and every interactive flow keeps a `--json`/flag-driven equivalent (the headline-output contract). **Recommended build order: #17 first** (the release thin slice — it is the gate every other item ships through, and it fixes a live self-update bug), then #14 → #15 → #16.
+
+**14. Interactive `init` wizard · 2w — the file-authoring front door.** ([spec 22](specs/22-init-wizard.md))
+Guided `devstack init`: a Bubble Tea v2 TUI (left engine-picker + right live `workspace.yaml` preview) picks the shared engines (filtered by template `Provides`), fills typed params from `ParamSpec`, and emits a structurally-validated `workspace.yaml` via one shared goccy ordered emitter (`scaffold.EmitWorkspaceYAML`, which `import` is refactored onto). A fully equivalent flag/`--json`/`--no-input` path runs off-TTY. Pure YAML authorship — no ledger, no Docker, no flock. Introduces the reusable `internal/prompt` substrate the rest of this lane consumes. *Onboarding stops assuming a hand-written config.*
+
+**15. Interactive template & Dockerfile authoring (TUI) · 2.5w.** ([spec 23](specs/23-template-authoring.md))
+`template new`: a Bubble Tea v2 wizard with a live preview pane (the real `template.Resolve` → `generate.LintResolved` path) that scaffolds `template.yaml` + an optional `build/` tree (Dockerfile) + a golden fixture into the `$DEVSTACK_HOME/templates` store. A thin front-end over the M1 engine; app-vs-engine branch; byte-stable via `writeIfChanged`; lock/ledger/secret-free. Adds the delimiter-collision / param-type / meta-templating lints (shared with `template lint`, so the two can't drift) and closes a real spec-19 gap. *Turns "the way we run services" into something a platform team authors, not hand-writes.*
+
+**16. `.env` ingestion → secrets/vars · 2.5w.** ([spec 24](specs/24-env-ingestion.md))
+`devstack secrets ingest [<.env>]`: converts a committed dotenv into SOPS+age `secret://` refs + **inlined** config-var literals (not `${env.KEY}` — that resolves empty once the `.env` is deleted; `--from-host` opts a key back to ambient host/CI sourcing) and rewrites the target `devstack.yaml`. `--to sops|aws-sm|infisical`; scaffolds a default sops provider when none is declared. Adds the secrets **Pusher** write capability (the existing providers were Resolve-only); parses via the already-vendored `compose-go/v2/dotenv`; idempotency is decrypt-and-compare. No plaintext on disk (CI leak-test). *The migration on-ramp off committed `.env` files.*
+
+**17. Release automation + 0.x conventional-commit versioning · 0.75w thin (+0.75w wizard) — the v0.2.0 gate.** ([spec 25](specs/25-release-automation.md))
+Conventional commits on `main` → `svu next --v0` → a `v*` semver tag (owner-gated `RELEASE_TOKEN`; its absence is the kill-switch) → the existing tag-triggered goreleaser. Fixes the load-bearing **ldflags v-prefix bug** (`{{.Version}}` stamps `0.1.0`, which `x/mod/semver` rejects) that currently makes the shipped spec-14 update-notifier + `self update` treat a released binary as a dev build and never offer updates. Adds a grouped goreleaser changelog, a PR-title conventional-commit lint, and a CI `v0.*` guard (stay 0.x: BREAKING → minor, never 1.0.0). Optional `devstack release` maintainer wizard. *Everything else in this lane ships through this pipeline — build it first.*
+
 ---
 
 ## At a glance
@@ -80,3 +96,7 @@ Generalize the shared stack to run on a remote Docker host (DOCKER_HOST/SSH cont
 | 11 | Versioned template registry | 2.5w | v2 · [spec 19](specs/19-template-registry.md) |
 | 12 | Opt-in telemetry | 1.5w | later · [spec 20](specs/20-telemetry.md) |
 | 13 | Remote/cloud shared backend | 8w | later · [spec 21](specs/21-remote-shared-backend.md) |
+| 14 | Interactive `init` wizard (TUI) | 2w | v0.2 beta DX (M8) · [spec 22](specs/22-init-wizard.md) |
+| 15 | Template & Dockerfile authoring (TUI) | 2.5w | v0.2 beta DX (M8) · [spec 23](specs/23-template-authoring.md) |
+| 16 | `.env` ingestion → secrets/vars | 2.5w | v0.2 beta DX (M8) · [spec 24](specs/24-env-ingestion.md) |
+| 17 | Release automation + 0.x versioning | 0.75w+0.75w | v0.2 gate (M8) · [spec 25](specs/25-release-automation.md) |
