@@ -1,24 +1,96 @@
 name: Release
 
+# Single-workflow release (spec 25), built-in GITHUB_TOKEN only — no PAT/App token.
+#
+# Two entry points, one job:
+#   • push to main      → svu computes the next 0.x version from conventional
+#                         commits and, IF enabled, tags + releases in THIS job.
+#   • push of a v* tag  → a human cut a tag by hand → just run goreleaser.
+#
+# Tag-compute and goreleaser run together ON PURPOSE: GitHub suppresses workflow
+# events triggered by GITHUB_TOKEN, so a tag pushed here does NOT re-trigger this
+# workflow (no double release) — which is exactly why a split tag→release setup
+# would have needed a separate token. We avoid the token by never depending on
+# that re-trigger.
+#
+# Kill-switch (automated path only): the repository variable RELEASE_ENABLED.
+# Unset/anything-but-"true" (the default) ⇒ compute + log, never release. Enable
+# once with:  gh variable set RELEASE_ENABLED --body true
+# A manual `git tag vX.Y.Z && git push` always releases (human pushes are not
+# suppressed and are not gated — explicit intent).
+
 on:
   push:
+    branches: [main]
     tags: ["v*"]
+    paths-ignore: ["**/*.md", "docs/**", "LICENSE", "NOTICE"]
+  workflow_dispatch: {}
 
 permissions:
-  contents: write # create the GitHub release + upload artifacts
+  contents: write # tag push + goreleaser GitHub Release, both via GITHUB_TOKEN
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # goreleaser needs full history + tags
+          fetch-depth: 0 # full history + tags for svu + goreleaser
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25"
           check-latest: true
+
+      # --- automated path (push to main / workflow_dispatch): compute + tag ---
+      - name: install svu (pinned)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: go install github.com/caarlos0/svu/v3@v3.4.1
+      - name: compute next version
+        id: svu
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          CUR="$(git describe --tags --abbrev=0 2>/dev/null || echo v0.0.0)"
+          NEXT="$(svu next --v0)"
+          echo "current=$CUR" >> "$GITHUB_OUTPUT"
+          echo "next=$NEXT"   >> "$GITHUB_OUTPUT"
+          echo "svu: $CUR -> $NEXT"
+      - name: 0.x guard (a stray feat!/BREAKING must NEVER yield v1.0.0 while in BETA)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          case "${{ steps.svu.outputs.next }}" in
+            v0.*) echo "ok: ${{ steps.svu.outputs.next }} is on the 0.x beta line" ;;
+            *) echo "::error::refusing non-0.x tag ${{ steps.svu.outputs.next }} while in BETA"; exit 1 ;;
+          esac
+      - name: gate + tag (only when enabled + a real bump)
+        id: gate
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          if [ "${{ vars.RELEASE_ENABLED }}" != "true" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "releases disabled: set repo variable RELEASE_ENABLED=true to enable (computed ${{ steps.svu.outputs.next }})"
+            exit 0
+          fi
+          if [ "${{ steps.svu.outputs.next }}" = "${{ steps.svu.outputs.current }}" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "no release due: no version-bumping commits since ${{ steps.svu.outputs.current }}"
+            exit 0
+          fi
+          git config user.name  "devstack-release[bot]"
+          git config user.email "release@devstack.local"
+          git tag "${{ steps.svu.outputs.next }}"
+          # GITHUB_TOKEN push: does NOT re-trigger this workflow's tag filter (so no
+          # double release); we run goreleaser below in this same job.
+          git push origin "${{ steps.svu.outputs.next }}"
+          echo "go=true" >> "$GITHUB_OUTPUT"
+          echo "tagged + pushed ${{ steps.svu.outputs.next }}"
+
+      # --- release: on a manual tag push, or right after auto-tagging ---
       - uses: goreleaser/goreleaser-action@v6
+        if: ${{ startsWith(github.ref, 'refs/tags/') || steps.gate.outputs.go == 'true' }}
         with:
           version: "~> v2"
           args: release --clean

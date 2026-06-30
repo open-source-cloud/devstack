@@ -68,6 +68,30 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 - macOS arm64 CI runner for trust/resolver/Desktop-VM behavior; cache GC; document Docker Desktop licensing + Podman/rootless out-of-scope.
 - Quickstart + migration guide, secrets threat model, troubleshooting; goreleaser tap + `.deb`/`.rpm`; tag 1.0.
 
+### M8 — Beta DX & release-engineering lane (post-M7, v0.2.x 0.x line) · **~8w**
+> Core M0–M7 has shipped (see [PROGRESS](../PROGRESS.md)). This lane is **strictly additive** over the existing substrate and **stays on the 0.x beta line** — it does NOT cut v1.0. The "tag 1.0" in M7 above is **superseded by the beta decision**: the project ships in beta (next release **v0.2.0**); 1.0 is a deliberate, later owner call, never reached by automation. "M8" is a *sequencing* label, not a version commitment.
+> Specs: [25](specs/25-release-automation.md) (release automation) · [22](specs/22-init-wizard.md) (init wizard) · [23](specs/23-template-authoring.md) (template authoring) · [24](specs/24-env-ingestion.md) (.env ingestion). All TUIs are Bubble Tea v2 + Charm (`bubbles`/`lipgloss/v2`/`huh/v2`), CGO-free, behind one shared `internal/prompt` theme with a non-TTY/`--json` fallback.
+
+**M8.0 — Release automation + 0.x versioning (the v0.2.0 gate) · 0.75w thin (+0.75w wizard).** ([spec 25](specs/25-release-automation.md))
+- `.svu.yaml` (`v0: true`) + a single rewritten `release.yml`: push-to-`main` → `svu next --v0` → tag + goreleaser **in one job** using the built-in `GITHUB_TOKEN` (no PAT), gated on the `RELEASE_ENABLED` repo variable; the same workflow also releases a human-cut `v*` tag.
+- Fix the ldflags v-prefix bug (un-mutes the shipped spec-14 self-update/notifier); add a grouped goreleaser changelog (`use: github` + `groups`/`filters`); PR-title conventional-commit lint; CI `v0.*` guard.
+- Optional: the `devstack release` maintainer wizard + an additive `update.channel` (stable|prerelease) knob (extends spec 14, does not redefine it).
+- **Sequence first** — every later item ships through it; the thin slice (~0.75w) is all that is needed to cut v0.2.0.
+
+**M8.1 — `internal/prompt` + interactive `init` · 2w.** ([spec 22](specs/22-init-wizard.md))
+- Introduce the Bubble Tea v2 + Charm stack behind `internal/prompt` (shared theme + non-TTY/`--json`/`--no-input` fallback so the headline-output contract holds and CI never drives Bubble Tea).
+- `devstack init` authors a structurally-valid `workspace.yaml` via a shared `scaffold.EmitWorkspaceYAML` ordered emitter; **refactor `internal/migrate` onto the same emitter** (re-baseline its golden output intentionally). No flock, no Docker.
+
+**M8.2 — `template new` authoring TUI · 2.5w.** ([spec 23](specs/23-template-authoring.md))
+- One `scaffold.Build(Spec)` pure builder fed by both the wizard and the flag/`--from`/`--json` path; live `template.Resolve` → `generate.LintResolved` preview; app-vs-engine branch; `writeIfChanged` byte-stability.
+- Implement the delimiter-collision / param-type / meta-templating lints **once** in shared lint code consumed by both `template new` preview and `template lint`. Reconcile spec-19's overstated `template init` description.
+
+**M8.3 — `.env` ingestion + secrets Pusher · 2.5w.** ([spec 24](specs/24-env-ingestion.md))
+- `secrets ingest` over the shipped SOPS+age/AWS/Infisical providers; net-new **Pusher** write capability (aws-sm/ssm/infisical) reusing existing auth plumbing; `compose-go/v2/dotenv` parse; decrypt-and-compare idempotency; default-sops-provider scaffold into `workspace.yaml`. No flock.
+- Add a `doctor` probe for the `sops` binary min-version (stdin / `--input-type` support).
+
+**Sequencing within M8:** M8.0 → M8.1 (lands `internal/prompt` + the shared emitter) → M8.2 (reuses both) → M8.3 (reuses prompt, adds the heaviest net-new backend). After each charm-dep add: re-run `make vuln` + the `CGO_ENABLED=0` static cross-build; no build tags may creep in.
+
 ---
 
 ## Totals
@@ -80,6 +104,7 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 | Onboarding/glue (M6) | 8 | +~2.5 months |
 | Hardening/GA (M7) | 6 | +~2 months |
 | **Full v1 (all pillars)** | **54** | **~13–15 months** |
+| Beta DX lane (M8, 0.x — post-GA) | ~8 | +~2.5 months |
 
 Calendar applies a 0.6–0.75 throughput factor (context-switching, Docker/WSL2/macOS debugging, dependency churn, docs, CI). Treat as planning ranges, not commitments.
 
