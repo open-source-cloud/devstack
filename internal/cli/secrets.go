@@ -20,6 +20,7 @@ func newSecretsCmd(g *GlobalOpts) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newSecretsKeygenCmd(g),
+		newSecretsIngestCmd(g),
 		newSecretsLoginCmd(g),
 		newSecretsLogoutCmd(g),
 		newSecretsStatusCmd(g),
