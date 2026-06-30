@@ -43,6 +43,12 @@ func validRef(ref string) bool {
 	return ref == path.Base(ref) && !filepath.IsAbs(ref)
 }
 
+// ValidRef reports whether ref is a valid template reference (a single path
+// segment — dots allowed, no slash/".."/absolute). Exported for the authoring
+// wizard (spec 23), which must validate a new template name with the EXACT rule the
+// source layer enforces.
+func ValidRef(ref string) bool { return validRef(ref) }
+
 func (s *FSSource) Resolve(ref string) (fs.FS, error) {
 	if !validRef(ref) {
 		return nil, fmt.Errorf("invalid template reference %q", ref)
