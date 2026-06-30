@@ -52,6 +52,21 @@ func RenderText(name string, src []byte, data any) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ParseCheck parses src as a template with the production delimiters + FuncMap but
+// does NOT execute it, returning any parse error. The authoring lints (spec 23) use
+// it to detect delimiter collisions: a literal "[[" or "]]" in a build/ file that is
+// not a valid template action makes Parse fail.
+func ParseCheck(name string, src []byte) error {
+	if _, err := template.New(name).
+		Delims(LeftDelim, RightDelim).
+		Funcs(funcMap()).
+		Option("missingkey=error").
+		Parse(string(src)); err != nil {
+		return fmt.Errorf("template %s: parse: %w", name, err)
+	}
+	return nil
+}
+
 // RenderYAML renders src as a text template (so params are substituted) and then
 // decodes the result into a map[string]any. It is for template *fragments* only.
 // An empty render decodes to an empty (non-nil) map.

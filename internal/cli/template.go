@@ -10,6 +10,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/generate"
 	"github.com/open-source-cloud/devstack/internal/store"
 	"github.com/open-source-cloud/devstack/internal/template"
+	"github.com/open-source-cloud/devstack/internal/template/scaffold"
 )
 
 // newTemplateCmd wires `devstack template list|lint|test|init` — the M1 template
@@ -25,6 +26,7 @@ func newTemplateCmd(g *GlobalOpts) *cobra.Command {
 		newTemplateLintCmd(g),
 		newTemplateTestCmd(g),
 		newTemplateInitCmd(g),
+		newTemplateNewCmd(g),
 	)
 	return cmd
 }
@@ -74,12 +76,15 @@ func newTemplateLintCmd(g *GlobalOpts) *cobra.Command {
 		Short: "Render a template with defaults and validate it through compose-go",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compose, name, err := lintTemplateDir(args[0])
+			compose, name, warnings, err := lintTemplateDir(args[0])
 			if err != nil {
 				return err
 			}
 			if g.JSON {
-				return writeJSON(cmd, map[string]any{"ok": true, "template": name})
+				return writeJSON(cmd, map[string]any{"ok": true, "template": name, "warnings": warnings})
+			}
+			for _, w := range warnings {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", w)
 			}
 			if show {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s", compose)
@@ -101,7 +106,7 @@ func newTemplateTestCmd(g *GlobalOpts) *cobra.Command {
 		Short: "Render a template with defaults and assert it validates (and matches golden, if present)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			compose, name, err := lintTemplateDir(args[0])
+			compose, name, _, err := lintTemplateDir(args[0])
 			if err != nil {
 				return err
 			}
@@ -146,21 +151,54 @@ func newTemplateInitCmd(g *GlobalOpts) *cobra.Command {
 }
 
 // lintTemplateDir resolves and validates a template directory, returning the
-// rendered single-service compose and the template name.
-func lintTemplateDir(dir string) ([]byte, string, error) {
+// rendered single-service compose, the template name, and any authoring-lint
+// warnings. The authoring lints (spec 23: meta-templating/delimiter-collision/
+// param-type) run first — a meta-templating action is a hard error — then the
+// compose-go render+validation.
+func lintTemplateDir(dir string) ([]byte, string, []string, error) {
 	src, name, err := template.NewDirSource(dir)
 	if err != nil {
-		return nil, "", err
+		return nil, "", nil, err
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, template.TemplateFile))
+	if err != nil {
+		return nil, name, nil, err
+	}
+	lr, err := scaffold.Lint(manifest, readBuildFiles(dir))
+	if err != nil {
+		return nil, name, nil, err
 	}
 	res, err := template.Resolve(src, name, nil)
 	if err != nil {
-		return nil, name, err
+		return nil, name, lr.Warnings, err
 	}
 	compose, err := generate.LintResolved(name, res)
 	if err != nil {
-		return nil, name, err
+		return nil, name, lr.Warnings, err
 	}
-	return compose, name, nil
+	return compose, name, lr.Warnings, nil
+}
+
+// readBuildFiles reads a template dir's build/ tree into a relpath→bytes map
+// (keys like "build/Dockerfile"), the shape scaffold.Lint expects. A missing
+// build/ dir yields an empty map.
+func readBuildFiles(dir string) map[string][]byte {
+	out := map[string][]byte{}
+	buildDir := filepath.Join(dir, template.BuildDir)
+	_ = filepath.WalkDir(buildDir, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		rel, rerr := filepath.Rel(dir, p)
+		if rerr != nil {
+			return nil
+		}
+		if data, rerr := os.ReadFile(p); rerr == nil {
+			out[filepath.ToSlash(rel)] = data
+		}
+		return nil
+	})
+	return out
 }
 
 // scaffoldTemplate writes a minimal template.yaml + build/Dockerfile skeleton.
