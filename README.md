@@ -130,34 +130,44 @@ services:
     ports: { http: 8080 }
 ```
 
-Then, **working today**:
+Then, the **headline flow**:
 
 ```bash
+devstack init                   # author workspace.yaml (interactive wizard, or --flags)
 devstack doctor                 # probe docker / compose≥2.20 / git≥2.30 / ports / state dir
-devstack config validate        # validate workspace.yaml + every devstack.yaml (file:line:col errors)
-devstack generate               # render compose + Dockerfiles deterministically into .devstack/
-devstack generate --check       # CI gate: fail if generated artifacts are stale
-devstack template list          # the built-in service templates
 devstack ws clone               # clone every repo in parallel (your SSH/credential setup)
-devstack ws status              # cross-repo git table (branch, ahead/behind, dirty); --check for CI
+devstack up                     # network → shared services (health-gated) → provision → compose up
+devstack status                 # composite: services + health + cross-repo git + ref graph
+devstack down                   # tear the project stacks down (shared infra stays warm, ref-counted)
+
+devstack generate --check       # CI gate: fail if generated artifacts are stale
 devstack shared status          # shared-service ref counts + consuming projects
+devstack secrets ingest .env    # convert a committed .env into secret:// refs + config vars
 ```
 
 ## Commands
 
 | Command | Status | What it does |
 |---|---|---|
-| `doctor` | ✅ | Environment capability matrix with one-line remediations (`--json`). |
+| `up` / `down` / `status` | ✅ | The lifecycle saga: ensure network → shared services (health-gated) → provision per-project DB → `compose up`; resumable, ref-counted. `status` is the composite services + git + ref-graph view. |
+| `init` | ✅ | Author a `workspace.yaml` — an interactive wizard on a TTY, flag-driven otherwise. |
+| `doctor` | ✅ | Environment capability matrix with one-line remediations (`--json`, `--fix`, `--rebuild-state`). |
 | `config validate` / `show` | ✅ | Load + validate the two-file config; `file:line:col` errors. |
 | `generate` | ✅ | Render + compose-go-validate compose/Dockerfiles; `--check`, `--project`, `--profile`. |
-| `template list/lint/test/init` | ✅ | Author and validate service templates. |
+| `template list/lint/test/init/new` | ✅ | Author and validate service templates; `new` is the authoring wizard. |
 | `ws clone/sync/status/git` | ✅ | Bounded-parallel multi-repo git over the workspace. |
-| `shared status` | ✅ | Shared-service ref counts and consuming projects. |
-| `self check` / `self update` | ✅ | Version check and checksum-verified self-update. |
+| `shared status/gc/doctor` | ✅ | Shared-service ref counts + consuming projects; reclaim zero-ref services; reconcile the ledger. |
+| `secrets keygen/ingest/login/logout/status` | ✅ | SOPS+age / AWS / Infisical secrets; `ingest` converts a `.env` into `secret://` refs + vars. |
+| `trust install/uninstall/status` | ✅ | Local-HTTPS CA via `mkcert`. |
+| `dns setup/status/remove` | ✅ | `*.localhost` resolver wiring. |
+| `tunnel login/create/route` | ✅ | Cloudflare tunnel (default down; refuses secret-bearing services). |
+| `self check/update` | ✅ | Version check and checksum-verified self-update. |
 | `store init/path/show` | ✅ | The global `~/.devstack` store: config + custom templates + shared defs. |
 | `alias add/remove/list` | ✅ | `argv[0]` alias symlinks (`rq`, `uranus`, …). |
-| `up` / `down` / `shell` / `logs` | 🚧 | Lifecycle saga — shared infra + provisioning + compose up (M2/M6). |
-| `secrets` / `trust` / `dns` / `tunnel` | 🚧 | Secrets (M4) and networking (M5). |
+| `import` | ✅ | Convert a legacy devdock `project.yaml` → the clean-slate two-file schema. |
+| `workspace destroy` / `uninstall` | ✅ | Tear down this workspace's stacks / reverse all machine-global artifacts. |
+| `shell` | 🚧 | Open a shell in a service container (planned). |
+| `logs` | 🚧 | Stream / aggregate service logs (planned — [spec 16](docs/specs/16-logs-and-dashboard.md)). |
 
 Every headline command supports `--json` and `--quiet` for scripting/CI.
 
@@ -184,21 +194,22 @@ Postgres. `devstack store show` lists the configured shared services;
 workspace → validates `workspace.yaml` + each `devstack.yaml` → renders a typed
 Compose model (validated by `compose-go`, written deterministically) → ensures a
 tool-owned external Docker network and the shared stack → provisions per-project
-DB/role/bucket on demand → drives `docker compose`. A machine-global SQLite ledger,
+Postgres role/db on demand → drives `docker compose`. A machine-global SQLite ledger,
 guarded by a cross-process `flock` and keyed by Docker context, tracks shared-service
 **reference counts** and port allocations so infra starts on demand and is reclaimed
 when unused. See **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ## Status
 
-🚧 **Pre-1.0, in active development.** Implemented and green on `make ci` + `make determinism`:
+🧪 **Beta (0.x), on the `v0.2+` line.** Everything below is implemented and green on `make ci` + `make determinism`:
 
-- **M0** — CLI tree + `argv[0]` aliasing, `flock` lock, SQLite ledger (Docker-context-keyed),
-  XDG/WSL2 handling, read-only Docker client + `doctor`.
-- **M1** — two-file config loader; the full deterministic **templating + generation** pipeline.
-- **M2 (core)** — ledger ref-counting + self-healing reconcile, Postgres provisioning,
-  `shared status`. *Remaining:* the `up`/`down` daemon saga.
+- **M0–M1** — CLI tree + `argv[0]` aliasing, `flock` lock, SQLite ledger (Docker-context-keyed), XDG/WSL2 handling, the read-only Docker client + `doctor`; the two-file config loader and the full deterministic **templating + generation** pipeline.
+- **M2** — shared-services lifecycle: tool-owned network, ledger ref-counting + self-healing reconcile, per-project Postgres provisioning, port allocation, `shared status/gc/doctor`, and the **`up`/`down` saga** (network → shared → provision → compose-up → hooks, resumable).
 - **M3** — multi-repo git (`gitx` + `ws clone/sync/status/git`).
+- **M4–M7** — secrets (`secret://` + SOPS+age/AWS/Infisical, no plaintext on disk), networking (Caddy proxy, `mkcert` trust, cloudflared tunnel, `dns`), orchestration glue (health gating, lifecycle hooks, profiles), `doctor --fix`, `workspace destroy`/`uninstall`, and self-update + `devstack import`.
+- **M8 (beta DX)** — `init` wizard, `template new` authoring, `secrets ingest` (`.env` → secrets), and conventional-commit **release automation** (released **v0.2.0+** automatically).
+
+**Next:** the **M9 local-cloud lane** (specs [26](docs/specs/26-cli-completeness.md)–[29](docs/specs/29-resource-commands.md)) — finish the CLI surface (`shell`, `logs`, `workspace list`), then a data-plane **resource layer** (databases/users, S3 buckets + lifecycle, queues, streams) and cloud-emulation **engines** (LocalStack, NATS, Kafka). The only command stubs today are `shell` and `logs`.
 
 Then: secrets (M4) · networking/local-HTTPS (M5) · orchestrated onboarding + health
 + hooks (M6) · hardening + GA (M7). See **[ROADMAP.md](docs/ROADMAP.md)**.
