@@ -20,7 +20,15 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/open-source-cloud/devstack/internal/version.Version={{.Version}}
+      # Stamp a `v`-PREFIXED semver. goreleaser's {{.Version}} is the tag with the
+      # leading `v` STRIPPED ("0.2.0"); golang.org/x/mod/semver requires the `v`
+      # and treats malformed input as lowest, so a stripped string makes
+      # internal/selfupdate's IsDevBuild() return true → the update notifier +
+      # `self update` silently treat a real release as a dev build and never fire
+      # (spec 25). The archive name_template below stays v-STRIPPED on purpose, to
+      # match assetName's TrimPrefix in internal/selfupdate (spec 14) — the two
+      # opposite conventions are both load-bearing; do not "unify" them.
+      - -X github.com/open-source-cloud/devstack/internal/version.Version=v{{ .Version }}
       - -X github.com/open-source-cloud/devstack/internal/version.Commit={{.ShortCommit}}
       - -X github.com/open-source-cloud/devstack/internal/version.Date={{.Date}}
 
@@ -63,5 +71,15 @@ snapshot:
   version_template: "{{ incpatch .Version }}-dev-{{ .ShortCommit }}"
 
 changelog:
+  # MUST stay `github` (or `git`): `groups`/`filters` below are IGNORED under
+  # `github-native`. goreleaser is the SINGLE source of release notes (no second
+  # generator) — it buckets the conventional-commit history pushed by tag.yml.
   use: github
   sort: asc
+  groups:
+    - { title: "Features", regexp: '^.*?feat(\(.+\))?!?:.*$', order: 0 }
+    - { title: "Bug fixes", regexp: '^.*?fix(\(.+\))?!?:.*$', order: 1 }
+    - { title: "Performance", regexp: '^.*?perf(\(.+\))?!?:.*$', order: 2 }
+    - { title: "Others", order: 99 }
+  filters:
+    exclude: ['^chore', '^docs', '^test', '^ci', '^build', '^style', '^Merge ']

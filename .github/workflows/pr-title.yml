@@ -1,0 +1,42 @@
+name: PR title
+
+# Conventional-commit lint for PR titles (spec 25). The repo squash-merges, so the
+# PR title becomes the commit subject that svu (tag.yml) reads to compute the next
+# version — an unconventional title silently corrupts version computation. Pure
+# shell, no Node toolchain (consistent with the rest of CI).
+#
+# Repo setting to pair with this: squash-merge only, with "Default to PR title" for
+# the squash commit message.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: check conventional-commit subject
+        # Pass the title via env (never inline-interpolated into the script) so a
+        # crafted PR title cannot inject shell.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -eu
+          pattern='^(feat|fix|docs|chore|ci|refactor|test|perf|build|style|revert)(\([a-z0-9._-]+\))?!?: .+'
+          if printf '%s' "$PR_TITLE" | grep -qiE "$pattern"; then
+            echo "ok: \"$PR_TITLE\""
+          else
+            echo "::error title=Non-conventional PR title::\"$PR_TITLE\" must be type(scope)?: subject"
+            echo "Allowed types: feat fix docs chore ci refactor test perf build style revert"
+            echo "Examples: 'feat(init): add shared-service picker'  |  'fix(release): stamp v-prefixed version'"
+            echo "Note: only feat (minor) / fix|perf (patch) / a '!' or BREAKING CHANGE bump the 0.x version."
+            exit 1
+          fi

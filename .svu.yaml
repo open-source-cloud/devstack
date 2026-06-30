@@ -1,0 +1,11 @@
+# svu (caarlos0/svu) config — drives conventional-commit → semver in CI (spec 25).
+#
+# v0 is NON-NEGOTIABLE while the project is in BETA: KeepV0 makes a BREAKING
+# change bump the MINOR (0.1.x → 0.2.0), never 1.0.0. Reaching 1.0.0 is a
+# deliberate, manual owner decision (drop this flag, cut v1.0.0 by hand) — it is
+# never produced by automation. A CI `v0.*` guard in tag.yml backs this up.
+#
+# Keep this file MINIMAL. svu's DEFAULT tag format is already `v<semver>`; do NOT
+# add a tag prefix/suffix or build-meta here — a non-semver tag breaks the
+# release-dryrun job's `goreleaser` for every PR (PROGRESS decision #1).
+v0: true
