@@ -92,6 +92,27 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 
 **Sequencing within M8:** M8.0 → M8.1 (lands `internal/prompt` + the shared emitter) → M8.2 (reuses both) → M8.3 (reuses prompt, adds the heaviest net-new backend). After each charm-dep add: re-run `make vuln` + the `CGO_ENABLED=0` static cross-build; no build tags may creep in.
 
+### M9 — Local-cloud platform lane (post-M8, v0.x beta) · **~14w**
+> Generalizes provision-on-demand (Postgres-only today) into a full data-plane resource layer and adds cloud-emulation engines, turning the shared-infra tool into a local cloud. Strictly additive; stays 0.x. Specs: [26](specs/26-cli-completeness.md) (CLI/README reconcile) · [27](specs/27-resource-layer.md) (resource model + Provisioner family) · [28](specs/28-cloud-engine-templates.md) (cloud engines) · [29](specs/29-resource-commands.md) (imperative verbs). Every mutation goes through `internal/lock`; engine tools (mc/aws/nats/rpk) shell out behind `internal/` interfaces (CGO-free rule); only generated artifacts are determinism-gated, ledger/runtime ops are not.
+
+**M9.0 — CLI completeness & README reconciliation (the credibility gate) · 2w.** ([spec 26](specs/26-cli-completeness.md))
+- Reconcile README Commands/Status to the shipped surface (up/down/secrets/trust/dns/tunnel are shipped; mark `logs` honestly v2/spec 16) — a truth-pass over merged code, lowest risk, ships first (cut v0.3.0).
+- Real interactive `shell` (new docker seam: `os.Stdin` + real `-it` TTY, no stderr capture, verbatim child exit code); `up --rebuild/--skip-clone` + exposed `--health-timeout`; `self update --force`; standalone `tunnel up/down` (spec 05 secret-guard); machine-wide `workspace` registry (thin pointer keyed by Docker context, written on `up` under the flock, `--prune`-only removal) + `workspace list`; reserved post-1.0 stubs.
+
+**M9.1 — Data-plane resource substrate · ~4.5w.** ([spec 27](specs/27-resource-layer.md))
+- `internal/resource`: Resource model + `Provisioner` interface; refactor Postgres provisioning behind it (behavior-preserving) FIRST. New `crypto/rand` keygen in `internal/secrets`; predictable|generated credential policy via the #16 Pusher.
+- Declarative `resources:` block (additive, validated by the cross-ref resolver) + a new up-saga `resources` phase subsuming the Postgres provision phase (drift reported, never auto-dropped). `resource list|show|create|rm|gc`; new `RemoveProvisioned(project,kind,name)` ledger op (free-text kind, no migration); `workspace destroy --purge-data` (opt-in, confirm-gated).
+
+**M9.2 — Cloud-emulation engine templates · 2.5w.** ([spec 28](specs/28-cloud-engine-templates.md))
+- Net-new localstack/ministack(AWS-emulation, `provides: aws`)/nats/kafka(Redpanda default)/rabbitmq engine templates on `devstack_shared`; `template new --kind engine` scaffold; `shared status`/`gc` coverage; info-level doctor `bin.*` probes. Confirm ministack.org image/port/SERVICES/health before authoring.
+- Resolve the secondary-port export-attr→port map (or drop monitor/admin attrs). Native NATS/Redpanda default; LocalStack opt-in.
+
+**M9.3 — Imperative resource verbs · ~5w (db+s3 ~2w, messaging ~3w gated on M9.2).** ([spec 29](specs/29-resource-commands.md))
+- `db` + `s3` on the PG/MinIO substrate — ship in v0.x now (own `FreeHostPort` purpose/base per engine; avoid the 45432 pg-provision base). Thin `aws --` shim.
+- `queue`/`topic`/`stream` (nats/redpanda native default, sqs/sns via LocalStack opt-in) — gated on M9.2 engines. Cross-kind `db gc` waits on spec 13's reaper.
+
+**Sequencing within M9:** M9.0 (now) → M9.1 (the substrate everything needs) → M9.2 (engines) ‖ M9.3-db/s3 (parallel, no new engine) → M9.3-messaging (after engines). Re-run `make vuln` + the CGO=0 cross-build after each engine-tool/dep add.
+
 ---
 
 ## Totals
@@ -105,6 +126,7 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 | Hardening/GA (M7) | 6 | +~2 months |
 | **Full v1 (all pillars)** | **54** | **~13–15 months** |
 | Beta DX lane (M8, 0.x — post-GA) | ~8 | +~2.5 months |
+| Local-cloud platform lane (M9, 0.x) | ~14 | +~4 months |
 
 Calendar applies a 0.6–0.75 throughput factor (context-switching, Docker/WSL2/macOS debugging, dependency churn, docs, CI). Treat as planning ranges, not commitments.
 

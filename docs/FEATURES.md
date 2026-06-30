@@ -77,6 +77,22 @@ Guided `devstack init`: a Bubble Tea v2 TUI (left engine-picker + right live `wo
 **17. Release automation + 0.x conventional-commit versioning · 0.75w thin (+0.75w wizard) — the v0.2.0 gate.** ([spec 25](specs/25-release-automation.md))
 Conventional commits on `main` → `svu next --v0` → tag + goreleaser **in one workflow** using the built-in `GITHUB_TOKEN` (no PAT/App token), gated by an owner-set `RELEASE_ENABLED` repo variable (default off = the kill-switch); a human-cut tag still releases via the same workflow. Fixes the load-bearing **ldflags v-prefix bug** (`{{.Version}}` stamps `0.1.0`, which `x/mod/semver` rejects) that currently makes the shipped spec-14 update-notifier + `self update` treat a released binary as a dev build and never offer updates. Adds a grouped goreleaser changelog, a PR-title conventional-commit lint, and a CI `v0.*` guard (stay 0.x: BREAKING → minor, never 1.0.0). Optional `devstack release` maintainer wizard. *Everything else in this lane ships through this pipeline — build it first.*
 
+### Local-cloud platform lane (post-M8, v0.x beta; specs 26–29)
+
+Turns the shared-infra tool into a **local cloud**: cloud-emulation engines + a first-class data-plane resource layer + the verbs to drive it, plus a CLI/README honesty gate that lands first. Strictly additive over M0–M8; stays 0.x. It generalizes provision-on-demand (Postgres-only today) from one engine to a family. **Build order: #21 (reconcile) first → #20 (substrate) → #19a db/s3 in parallel with #18 (engines) → #19b messaging last.**
+
+**18. Local-cloud shared-engine templates · 2.5w.** ([spec 28](specs/28-cloud-engine-templates.md))
+Net-new warm, ref-counted, tenant-isolated cloud engines on `devstack_shared`: **LocalStack** (and **ministack** — the ministack.org image — as an interchangeable AWS-emulation engine, `provides: aws`), **NATS** (JetStream), **Kafka** (Redpanda default; `image:` escape hatch to Apache Kafka), **RabbitMQ**. Each is a standard `provides:`/`exports:`/`defaultPort:` engine template with a typed healthcheck, health-gated by the up saga and reaped by `shared gc`. Native NATS/Redpanda are the default messaging stack; LocalStack is opt-in for AWS-API fidelity. *Pairs with #19.*
+
+**19. Imperative resource commands — db / s3 / queue / stream / aws · ~5w (db+s3 ~2w now).** ([spec 29](specs/29-resource-commands.md))
+Per-domain verbs creating tenant-scoped resources via the same Provisioner the declarative block runs at `up`: `db` (create/user/grant/list/drop/gc), `s3` (mb/rb/ls/lifecycle/versioning/policy/cors), `queue`/`topic`/`stream`, and a thin `aws --` passthrough (host aws-cli with `--endpoint-url` + dev creds prefilled). Each verb mirrors the provision-phase `lock → 127.0.0.1 overlay → provisioner → ledger → event` flow. db+s3 ship now on the existing PG/MinIO substrate; queue/topic/stream are gated on #18. *The imperative escape hatch beside the declarative default.*
+
+**20. Data-plane resource layer (`resources:` block + Provisioner family) · ~4.5w — the substrate.** ([spec 27](specs/27-resource-layer.md))
+Generalizes provision-on-demand into a `Resource` model + a per-engine `Provisioner` family (`internal/resource`), plus a **declarative `resources:` block in `devstack.yaml`** (the **recommended** path — committed, reproducible, provisioned by a new up-saga phase that subsumes today's Postgres provision phase). Reuses the free-text `kind` ledger (zero migrations), the flock, and the host-port overlay; per-resource predictable|generated credential policy via the #16 secrets Pusher (+ a net-new crypto/rand keygen). Never auto-drops on config deletion (drift reported); single-owner per resource (no cross-project grants yet). *The load-bearing generalization #18/#19 sit on.*
+
+**21. CLI completeness & README reconciliation · 2w — ships FIRST (v0.3.0).** ([spec 26](specs/26-cli-completeness.md))
+A truth-pass over already-shipped code: fix the stale README (up/down/secrets/trust/dns/tunnel are **shipped**, not 🚧; `logs` honestly marked v2/spec 16), land the real `shell` (a new interactive docker seam — `os.Stdin` + a real `-it` TTY, verbatim child exit code, *not* the stderr-capturing `ExecRunner`), `up --rebuild/--skip-clone` + the existing `--health-timeout`, `self update --force`, standalone `tunnel up/down` (honoring spec 05's `secret://` refusal), a machine-wide `workspace` registry + `workspace list`, and the reserved post-1.0 stubs. *The credibility gate; zero dependency on the cloud work.*
+
 ---
 
 ## At a glance
@@ -100,3 +116,7 @@ Conventional commits on `main` → `svu next --v0` → tag + goreleaser **in one
 | 15 | Template & Dockerfile authoring (TUI) | 2.5w | v0.2 beta DX (M8) · [spec 23](specs/23-template-authoring.md) |
 | 16 | `.env` ingestion → secrets/vars | 2.5w | v0.2 beta DX (M8) · [spec 24](specs/24-env-ingestion.md) |
 | 17 | Release automation + 0.x versioning | 0.75w+0.75w | v0.2 gate (M8) · [spec 25](specs/25-release-automation.md) |
+| 18 | Local-cloud engine templates (LocalStack/ministack/NATS/Kafka/RabbitMQ) | 2.5w | v0.x (M9) · [spec 28](specs/28-cloud-engine-templates.md) |
+| 19 | Imperative resource commands (db/s3/queue/stream/aws) | ~5w | v0.x — db/s3 now (M9) · [spec 29](specs/29-resource-commands.md) |
+| 20 | Data-plane resource layer (`resources:` + Provisioners) | ~4.5w | v0.x (M9) · [spec 27](specs/27-resource-layer.md) |
+| 21 | CLI completeness & README reconciliation | 2w | v0.3.0 — ships first (M9) · [spec 26](specs/26-cli-completeness.md) |
