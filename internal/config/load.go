@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+
+	"github.com/goccy/go-yaml"
 )
 
 // Load discovers the workspace by walking up from start, parses workspace.yaml
@@ -38,6 +40,23 @@ func LoadWorkspaceOnly(start string) (string, *Workspace, error) {
 		return "", nil, formatStructErr(src.path, err)
 	}
 	return root, &ws, nil
+}
+
+// ValidateWorkspaceBytes structurally validates raw workspace.yaml bytes in
+// memory — the apiVersion/kind header and every dsname — WITHOUT reading any
+// project devstack.yaml (which need not exist yet). It is what `devstack init`
+// runs over its emitted bytes before writing, so a malformed file is caught
+// pre-write instead of as a parse failure on the next `generate`. Cross-ref /
+// shared-graph resolution still defers to Load once project repos are on disk.
+func ValidateWorkspaceBytes(b []byte) error {
+	var ws Workspace
+	if err := yaml.UnmarshalWithOptions(b, &ws); err != nil {
+		return fmt.Errorf("%s: %s", WorkspaceFile, yaml.FormatError(err, false, true))
+	}
+	if err := structValidate(&ws); err != nil {
+		return formatStructErr(WorkspaceFile, err)
+	}
+	return nil
 }
 
 // LoadAt loads the workspace rooted at an already-discovered directory.
