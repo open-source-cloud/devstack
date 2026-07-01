@@ -228,6 +228,8 @@ Run `devstack doctor` to check all of the above.
 
 ## Documentation
 
+- **[Usage guide](docs/guide/README.md)** — the task-oriented, multi-page book: concepts, workspaces, projects, every command, config reference, and more.
+- **[QUICKSTART.md](docs/QUICKSTART.md)** — the 5-minute path.
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** — runtime model, the generation pipeline, topology, module map.
 - **[DECISIONS.md](docs/DECISIONS.md)** — the chosen stack + the *verified* corrections from research.
 - **[ROADMAP.md](docs/ROADMAP.md)** — milestones, effort, honest calendar.
