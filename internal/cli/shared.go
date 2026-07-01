@@ -27,6 +27,8 @@ func newSharedCmd(g *GlobalOpts) *cobra.Command {
 		newSharedStatusCmd(g),
 		newSharedGcCmd(g),
 		newSharedDoctorCmd(g),
+		newSharedExposeCmd(g),
+		newSharedPortsCmd(g),
 	)
 	return cmd
 }

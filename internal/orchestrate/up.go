@@ -427,6 +427,7 @@ func sharedPhase(d UpDeps, projects, names, provInstances []string) Phase {
 			// Publish each provisioned Postgres on 127.0.0.1:<ledger port> via an
 			// up-time overlay so host-side pgx (the provision phase) can reach it,
 			// without touching the deterministic generated compose.
+			var overrides []string
 			if len(prov) > 0 {
 				ports := map[string]int{}
 				for _, inst := range prov {
@@ -440,8 +441,17 @@ func sharedPhase(d UpDeps, projects, names, provInstances []string) Phase {
 				if err != nil {
 					return nil, err
 				}
-				cp.Overrides = []string{overlay}
+				overrides = append(overrides, overlay)
 			}
+			// Re-apply a prior `shared expose` so GUI-client host ports persist
+			// across up/down (its 5xxxx range never collides with provisioning's
+			// 4xxxx). Skipped on a remote backend (bridge is not host-routable).
+			if d.Backend.Reachability() != docker.ViaProxy {
+				if p := exposeOverlayPath(d.Model.Root); fileExists(p) {
+					overrides = append(overrides, p)
+				}
+			}
+			cp.Overrides = overrides
 			if err := cp.Up(ctx, names...); err != nil {
 				return nil, fmt.Errorf("compose up shared: %w", err)
 			}
