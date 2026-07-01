@@ -16,11 +16,21 @@ const (
 
 // Check is one capability probe with a one-line remediation when not OK
 // (ARCHITECTURE §7.6: actionable errors are what close GitHub issues).
+//
+// ID/Category/Fixable are additive (spec 13): existing JSON consumers that only
+// read name/status/detail/remediation keep working, while newer tooling can key
+// off the stable ID, group by Category, and learn whether `doctor --fix` can
+// remediate the probe. Fixed is set by `doctor --fix` when a remediation ran and
+// the re-probe came back green.
 type Check struct {
 	Name        string      `json:"name"`
+	ID          string      `json:"id,omitempty"`
+	Category    string      `json:"category,omitempty"`
 	Status      CheckStatus `json:"status"`
 	Detail      string      `json:"detail"`
 	Remediation string      `json:"remediation,omitempty"`
+	Fixable     bool        `json:"fixable"`
+	Fixed       bool        `json:"fixed,omitempty"`
 }
 
 // Preflight probes the external tools devstack drives. The daemon probe is
