@@ -92,6 +92,9 @@ type Config struct {
 	// 21): a `docker context` or DOCKER_HOST endpoint. nil = the local daemon. A
 	// workspace.yaml `backend:` block, when present, overrides this per workspace.
 	Backend *config.BackendConfig `yaml:"backend,omitempty"`
+	// Templates is the digest-pinned registry lockfile (spec 19): remote template
+	// sources registered by `template add`, resolved by name in the source chain.
+	Templates []RemoteTemplate `yaml:"templates,omitempty"`
 	// Telemetry is the per-user/per-machine opt-in usage-telemetry consent
 	// (spec 20). It lives here — never in workspace.yaml (must not be committed)
 	// and never in state.db (it's user policy, not ledger state). Default OFF: a

@@ -27,13 +27,13 @@ func newTemplateCmd(g *GlobalOpts) *cobra.Command {
 		newTemplateTestCmd(g),
 		newTemplateInitCmd(g),
 		newTemplateNewCmd(g),
-		// Reserved remote-registry verbs (spec 19, v2) — tree-only stubs so
-		// help/completions stay consistent (spec 26 / spec 07).
-		stub("push", "Publish a template to a remote registry", "v2 (spec 19)"),
-		stub("add", "Add a remote template source", "v2 (spec 19)"),
-		stub("update", "Update cached remote templates", "v2 (spec 19)"),
-		stub("diff", "Diff a local template against its remote", "v2 (spec 19)"),
-		stub("verify", "Verify a remote template's signature", "v2 (spec 19)"),
+		// Versioned OCI template registry (spec 19).
+		newTemplatePushCmd(g),
+		newTemplateAddCmd(g),
+		newTemplateUpdateCmd(g),
+		newTemplateDiffCmd(g),
+		newTemplateVerifyCmd(g),
+		newTemplateLsCmd(g),
 	)
 	return cmd
 }

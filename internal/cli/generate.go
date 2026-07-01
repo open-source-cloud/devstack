@@ -13,14 +13,26 @@ import (
 )
 
 // builtinSource is the template source used by generation and the template
-// tooling: custom templates in the store (~/.devstack/templates) override the
-// embedded built-ins by name; the embedded set is always the fallback.
+// tooling. Resolution priority is embedded < store < remote (first match wins in
+// the chain, so the highest-priority source is listed first): a digest-pinned
+// REMOTE template (spec 19) overrides a store template, which overrides an
+// embedded built-in of the same name. A cold/missing remote cache contributes
+// nothing, keeping generation offline-first and deterministic (with no remote
+// templates registered the chain is byte-identical to the pre-spec-19 behavior).
 func builtinSource() template.TemplateSource {
 	embedded := template.NewFSSource(templates.FS)
-	if dir := userTemplatesDir(); dir != "" {
-		return template.NewChainSource(template.NewFSSource(os.DirFS(dir)), embedded)
+	var chain []template.TemplateSource
+	if remote := remoteTemplateSource(); remote != nil {
+		chain = append(chain, remote)
 	}
-	return embedded
+	if dir := userTemplatesDir(); dir != "" {
+		chain = append(chain, template.NewFSSource(os.DirFS(dir)))
+	}
+	if len(chain) == 0 {
+		return embedded
+	}
+	chain = append(chain, embedded)
+	return template.NewChainSource(chain...)
 }
 
 // newGenerateCmd wires `devstack generate` — the M1 deterministic pipeline entry
