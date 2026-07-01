@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/open-source-cloud/devstack/internal/alias"
+	"github.com/open-source-cloud/devstack/internal/branding"
 	"github.com/open-source-cloud/devstack/internal/selfupdate"
 	"github.com/open-source-cloud/devstack/internal/version"
 	"github.com/open-source-cloud/devstack/internal/xdg"
@@ -45,8 +46,9 @@ func NewRootCmd(opts Options) *cobra.Command {
 	root := &cobra.Command{
 		Use:   brand.Name,
 		Short: "Docker-based dev environments with infrastructure shared across projects",
-		// The version is shown on top of the help banner (fang renders Long first).
-		Long: brand.Name + " " + version.Version + "\n\n" +
+		// fang renders Long at the top of help; it exposes no logo option, so the
+		// ASCII logo lives here (the version line follows it).
+		Long: branding.Logo() + "\n\n" + brand.Name + " " + version.Version + "\n\n" +
 			"devstack manages Docker-based development environments and shares infrastructure\n" +
 			"(one warm Postgres/Redis/MinIO) across many project stacks in a workspace.",
 		Version:       version.String(),
@@ -81,6 +83,8 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newDownCmd(g),
 		newShellCmd(g),
 		newStatusCmd(g),
+		newUseCmd(g),
+		newContextCmd(g),
 		newLogsCmd(g),
 		newDashboardCmd(g),
 		newDnsCmd(g),

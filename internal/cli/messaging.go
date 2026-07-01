@@ -5,7 +5,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/orchestrate"
 	"github.com/open-source-cloud/devstack/internal/state"
 )
@@ -90,7 +89,7 @@ func listMessagingRows(cmd *cobra.Command, kind, project string, all bool) ([]st
 	defer closeFn()
 	proj := project
 	if proj == "" {
-		proj = defaultProjectFromModel(mgr.Model)
+		proj = resolveActiveProject(mgr.Model, mgr.DB)
 	}
 	var rows []state.Provisioned
 	if proj != "" && !all {
@@ -108,15 +107,6 @@ func listMessagingRows(cmd *cobra.Command, kind, project string, all bool) ([]st
 		}
 	}
 	return out, proj, nil
-}
-
-// defaultProjectFromModel returns the workspace's single/first project by name.
-func defaultProjectFromModel(m *config.Model) string {
-	names := sortedProjectNames(m)
-	if len(names) > 0 {
-		return names[0]
-	}
-	return ""
 }
 
 func contains(s []string, v string) bool {

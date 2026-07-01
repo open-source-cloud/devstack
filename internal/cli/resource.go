@@ -334,13 +334,11 @@ func newResourceGcCmd(g *GlobalOpts) *cobra.Command {
 
 // --- helpers ---------------------------------------------------------------
 
-// defaultProject returns the workspace's single project, or the first by name.
+// defaultProject resolves the default project for a data-plane command: the
+// active-context resolution (DEVSTACK_PROJECT → persisted active → single/first),
+// spec 30.
 func defaultProject(d orchestrate.UpDeps) string {
-	names := sortedProjectNames(d.Model)
-	if len(names) > 0 {
-		return names[0]
-	}
-	return ""
+	return resolveActiveProject(d.Model, d.DB)
 }
 
 // engineForKindGuess maps a ledger kind back to its engine for the live set
