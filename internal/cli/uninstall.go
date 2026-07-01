@@ -155,7 +155,7 @@ func runUninstall(ctx context.Context, env uninstallEnv) UninstallResult {
 
 	// 4. remove the marker-fenced /etc/hosts entries.
 	if removed, err := dns.Remove(env.HostsPath); err != nil {
-		res.Warnings = append(res.Warnings, fmt.Sprintf("/etc/hosts cleanup: %v (try `sudo devstack uninstall`)", err))
+		res.Warnings = append(res.Warnings, fmt.Sprintf("/etc/hosts cleanup: %v (try `%s`)", err, sudoSelfCmd("uninstall")))
 	} else {
 		res.HostsCleared = removed
 	}
