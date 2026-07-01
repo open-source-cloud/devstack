@@ -163,3 +163,23 @@ func GetBucketCORS(ctx context.Context, d UpDeps, bucket string) ([]s3types.CORS
 	}
 	return bc.GetCORS(ctx, target, bucket)
 }
+
+// ResolveAwsEndpoint resolves the host-reachable S3-compatible endpoint for the
+// `aws --` shim: it prefers a LocalStack instance, falling back to MinIO, applies
+// the loopback overlay, and returns the endpoint URL + region + dev creds. Errors
+// clearly when neither engine is in the workspace.
+func ResolveAwsEndpoint(ctx context.Context, d UpDeps) (endpoint, region string, access, secret string, err error) {
+	for _, engine := range []string{"localstack", "minio"} {
+		inst, ok := ResolveInstance(d.Model, engine)
+		if !ok {
+			continue
+		}
+		t, terr := engineTarget(ctx, d, engine, inst)
+		if terr != nil {
+			return "", "", "", "", terr
+		}
+		return fmt.Sprintf("http://%s:%d", t.Host, t.Port), "us-east-1",
+			t.AdminEnv["user"], t.AdminEnv["password"], nil
+	}
+	return "", "", "", "", fmt.Errorf("no localstack/minio shared instance in this workspace (declare one under workspace.shared and run `devstack up`)")
+}
