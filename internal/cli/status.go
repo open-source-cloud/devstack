@@ -40,6 +40,7 @@ func newStatusCmd(g *GlobalOpts) *cobra.Command {
 			if g.JSON {
 				return writeJSON(cmd, map[string]any{"projects": projects, "shared": shared})
 			}
+			renderContextHeader(cmd, mgr, g)
 			renderStatus(cmd, projects, shared)
 			return nil
 		},

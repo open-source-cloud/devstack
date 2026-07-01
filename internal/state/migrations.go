@@ -15,6 +15,7 @@ var migrations = []migration{
 	{version: 1, stmt: schemaV1},
 	{version: 2, stmt: schemaV2},
 	{version: 3, stmt: schemaV3},
+	{version: 4, stmt: schemaV4},
 }
 
 // schemaV1 is the initial ledger (spec 08 §Tables). Every mutable row is scoped
@@ -130,6 +131,23 @@ CREATE TABLE IF NOT EXISTS workspace (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     last_up_at TEXT,
     PRIMARY KEY (ctx, root),
+    FOREIGN KEY (ctx) REFERENCES docker_context(name) ON DELETE CASCADE
+);
+`
+
+// schemaV4 (spec 30) adds the active-context pointer: the persisted "current"
+// workspace root + project for this Docker context — the default the CLI resolves
+// when neither --project nor DEVSTACK_PROJECT/DEVSTACK_WORKSPACE is set. One row
+// per ctx (a single active context per machine-context), CASCADE-deleted with its
+// docker_context like every other ledger table. It is a POINTER only: the project
+// is only honored when its workspace_root matches the workspace discovered at
+// command time, so a stale pointer never leaks a project into another workspace.
+const schemaV4 = `
+CREATE TABLE IF NOT EXISTS active_context (
+    ctx            TEXT PRIMARY KEY,
+    workspace_root TEXT NOT NULL DEFAULT '',
+    project        TEXT NOT NULL DEFAULT '',
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (ctx) REFERENCES docker_context(name) ON DELETE CASCADE
 );
 `
