@@ -1,0 +1,83 @@
+name: Nightly
+
+# Scheduled nightly health build (spec 07 toolchain, mirrors CI). This lane exists
+# to catch drift that the per-PR CI can miss — a new Go point release, a transitive
+# dependency that breaks a cross-compile target, or non-deterministic generation —
+# BEFORE it bites a real release. It runs the full `make ci` equivalent plus the
+# 4-target CGO-free cross-build and the determinism assertion.
+#
+# It NEVER cuts a real semver release and NEVER pushes a git tag: a stray non-semver
+# tag (e.g. `nightly`) confuses `git describe` in goreleaser and breaks the
+# release-dryrun lane on every PR (MEMORY: no-non-semver-tags). The optional
+# pre-release path (default OFF) publishes goreleaser *snapshot* artifacts as
+# workflow artifacts only — no tag is ever created.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # 07:00 UTC daily
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Single enforced Go toolchain floor (DECISIONS, ARCHITECTURE §7.8) — same as CI.
+  GO_VERSION: "1.25"
+
+jobs:
+  # The full nightly gate. Guarded so scheduled runs no-op on forks (a fork inherits
+  # the schedule but not the org repo name); workflow_dispatch on a fork is likewise
+  # skipped, keeping this lane a first-party-only signal.
+  nightly:
+    if: github.repository == 'open-source-cloud/devstack'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true # nightly's whole point: pick up new Go point releases
+          cache: true # GOMODCACHE + GOCACHE, keyed by go.sum
+
+      # `make ci` (fmt-check + vet + CGO=0 build + CGO=1 test-race) plus the 4-target
+      # cross-build and the byte-identical generation assertion, all via one target.
+      - name: nightly gate (fmt-check + vet + cross-build + test-race + determinism)
+        run: make nightly
+
+  # Optional rolling pre-release. Default OFF: enable by setting the repo variable
+  #   gh variable set NIGHTLY_PRERELEASE --body true
+  # Produces goreleaser SNAPSHOT artifacts (no real version, no git tag) and uploads
+  # them as workflow artifacts for manual smoke-testing of a nightly build. We do NOT
+  # create a GitHub Release or a `nightly` git tag — that would trip release-dryrun.
+  prerelease:
+    needs: nightly
+    if: github.repository == 'open-source-cloud/devstack' && vars.NIGHTLY_PRERELEASE == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for goreleaser's snapshot versioning
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean
+      - name: upload nightly snapshot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-snapshot
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/checksums.txt
+          retention-days: 7
+          if-no-files-found: error
