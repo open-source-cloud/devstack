@@ -27,6 +27,8 @@ require (
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
 	github.com/nats-io/nats.go v1.52.0
+	github.com/opencontainers/go-digest v1.0.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/spf13/cobra v1.10.2
 	github.com/twmb/franz-go v1.21.4
 	github.com/twmb/franz-go/pkg/kadm v1.18.0
@@ -35,6 +37,7 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.44.0
 	modernc.org/sqlite v1.52.0
+	oras.land/oras-go/v2 v2.6.1
 )
 
 require (
@@ -95,8 +98,6 @@ require (
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.26 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
