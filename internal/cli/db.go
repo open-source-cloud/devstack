@@ -17,8 +17,10 @@ import (
 // Postgres database + role/grant verbs on the shared engine. create/user/grant/
 // drop/gc mirror the up-saga provision flow (lock → overlay → provisioner →
 // ledger → event) via internal/orchestrate; list is a lock-free ledger read.
-// snapshot/restore (+ snapshot ls) graduate the spec-15 data-lifecycle verbs;
-// reset/pull stay v2 stubs.
+// snapshot/restore (+ snapshot ls) plus reset/pull graduate the full spec-15
+// data-lifecycle surface (reset = drop + re-provision an empty tenant; pull =
+// fetch-by-name from the LOCAL snapshot store + restore — the remote/team shared
+// store is deferred to spec 21).
 func newDbCmd(g *GlobalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db",
@@ -34,9 +36,8 @@ func newDbCmd(g *GlobalOpts) *cobra.Command {
 		// spec-15 data-lifecycle verbs.
 		newDbSnapshotCmd(g),
 		newDbRestoreCmd(g),
-		// remaining spec-15 verbs (reset/pull) reserved as stubs.
-		stub("reset", "Drop and re-provision a project's database", "v2 (spec 15)"),
-		stub("pull", "Pull a database snapshot from a shared store", "v2 (spec 15)"),
+		newDbResetCmd(g),
+		newDbPullCmd(g),
 	)
 	return cmd
 }
@@ -170,6 +171,107 @@ func newDbRestoreCmd(g *GlobalOpts) *cobra.Command {
 	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
 	cmd.Flags().BoolVar(&force, "force", false, "replay over a non-empty database (overwrite existing data)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "skip the confirmation prompt (required for --json)")
+	return cmd
+}
+
+// newDbResetCmd wires `db reset` (spec 15): DROP and re-provision a project's
+// tenant database on the shared Postgres to a clean, empty tenant. Destructive —
+// it refuses without --yes; --force overrides a still-connected database
+// (terminating its live backends). The drop + re-provision DDL runs under the
+// flock; the never-recreate-a-stateful-shared-service guard holds (only the
+// tenant DATABASE is dropped, never the shared container).
+func newDbResetCmd(g *GlobalOpts) *cobra.Command {
+	var project, instance string
+	var yes, force bool
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Drop and re-provision a project's tenant database to empty (destructive)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if g.JSON && !yes {
+				return fmt.Errorf("refusing to reset without --yes for --json/non-interactive use")
+			}
+			d, closeFn, err := buildUpDeps(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			proj := project
+			if proj == "" {
+				proj = defaultProject(d)
+			}
+			if !yes {
+				if !confirm(cmd, fmt.Sprintf("This DROPS and recreates %q's tenant database EMPTY (all data destroyed). Type 'yes' to continue: ", proj)) {
+					fmt.Fprintln(cmd.OutOrStdout(), "aborted")
+					return nil
+				}
+			}
+			res, err := orchestrate.Reset(cmd.Context(), d, orchestrate.ResetOptions{
+				Project: project, Instance: instance, Force: force,
+			})
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, res)
+			}
+			if !g.Quiet {
+				fmt.Fprintf(cmd.OutOrStdout(), "reset %s: dropped and recreated empty database %q owned by %q\n", res.Project, res.Database, res.Role)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "owner project (default: the workspace's single/first project)")
+	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "skip the confirmation prompt (required for --json)")
+	cmd.Flags().BoolVar(&force, "force", false, "terminate live connections and reset a still-connected database")
+	return cmd
+}
+
+// newDbPullCmd wires `db pull <name>` (spec 15): fetch a named snapshot from the
+// LOCAL snapshot store and apply it into the project's tenant, seeding it from a
+// real dataset. In this scope the store is local ($DEVSTACK_HOME/snapshots), so a
+// pull is a fetch-by-name + restore that refuses to clobber a non-empty tenant
+// (run `db reset` first to re-seed). The REMOTE/team "shared store" (S3/HTTP fetch
+// + the mandatory sanitize transform) is DEFERRED to spec 21.
+func newDbPullCmd(g *GlobalOpts) *cobra.Command {
+	var project, database, instance string
+	cmd := &cobra.Command{
+		Use:   "pull <name>",
+		Short: "Seed a project's tenant from a named snapshot in the local store",
+		Long: "Fetch a named snapshot from the local snapshot store ($DEVSTACK_HOME/snapshots) " +
+			"and apply it into the project's tenant database, seeding a fresh tenant. " +
+			"Refuses to overwrite a non-empty tenant (run `db reset` first to re-seed). " +
+			"The remote/team shared store (fetch-by-URL + sanitize) is deferred to spec 21.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, closeFn, err := buildUpDeps(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			dumper := defaultPgDumper()
+			if err := dumper.Preflight(cmd.Context()); err != nil {
+				return err
+			}
+			meta, err := orchestrate.Pull(cmd.Context(), d, dumper, orchestrate.PullOptions{
+				Project: project, Database: database, Instance: instance, Name: args[0],
+			})
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, meta)
+			}
+			if !g.Quiet {
+				fmt.Fprintf(cmd.OutOrStdout(), "pulled snapshot %q into %s (digest %s)\n", meta.Name, meta.Database, shortDigest(meta.Digest))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "owner project (default: the workspace's single/first project)")
+	cmd.Flags().StringVar(&database, "db", "", "physical tenant database (default: the project's own database)")
+	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
 	return cmd
 }
 

@@ -52,6 +52,18 @@ type RestoreOptions struct {
 	Force    bool   // replay over a non-empty tenant (destructive)
 }
 
+// PullOptions selects the tenant + named snapshot to seed from the LOCAL snapshot
+// store. `db pull` is the seed-from-a-dump verb (spec 15): in this scope it is a
+// fetch-by-name from the local store ($DEVSTACK_HOME/snapshots) + a restore into a
+// fresh tenant. The remote/team "shared store" backend (S3/HTTP fetch + the
+// mandatory sanitize transform) is DEFERRED to spec 21 — see Pull's doc.
+type PullOptions struct {
+	Project  string
+	Database string
+	Instance string
+	Name     string // required: the snapshot label to pull + apply
+}
+
 // SnapshotMeta is the on-disk + ledger record of one captured dump. It is written
 // as a sidecar JSON next to the dump and surfaced verbatim by `db snapshot ls`.
 type SnapshotMeta struct {
@@ -180,6 +192,27 @@ func Snapshot(ctx context.Context, d UpDeps, dumper db.Dumper, opt SnapshotOptio
 // a non-empty tenant unless opt.Force (data-loss guard, spec 15). The pg_restore
 // PROCESS runs outside the flock; the event row write is locked.
 func Restore(ctx context.Context, d UpDeps, dumper db.Dumper, opt RestoreOptions) (SnapshotMeta, error) {
+	return replaySnapshot(ctx, d, dumper, opt, "db.restore")
+}
+
+// Pull fetches a named snapshot from the LOCAL store and applies it into the
+// project's tenant, seeding it from a real dataset (spec 15 `db pull`). In this
+// scope the store IS local ($DEVSTACK_HOME/snapshots), so a pull is exactly a
+// fetch-by-name + restore into a fresh tenant (it reuses the same pg_restore path
+// + loopback overlay), refusing a non-empty tenant so it never clobbers live data
+// (`db reset` first to re-seed). The REMOTE/team "shared store" — an S3/HTTP fetch
+// plus the mandatory pre-store sanitize transform — is DEFERRED to spec 21.
+func Pull(ctx context.Context, d UpDeps, dumper db.Dumper, opt PullOptions) (SnapshotMeta, error) {
+	return replaySnapshot(ctx, d, dumper, RestoreOptions{
+		Project: opt.Project, Database: opt.Database, Instance: opt.Instance, Name: opt.Name,
+	}, "db.pull")
+}
+
+// replaySnapshot is the shared body of Restore + Pull: resolve the tenant, verify
+// the stored dump's integrity, guard against clobbering a non-empty tenant, then
+// replay the dump OUTSIDE the flock and log `event` (locked). event distinguishes
+// a `db.restore` (roll back) from a `db.pull` (seed) in the event log.
+func replaySnapshot(ctx context.Context, d UpDeps, dumper db.Dumper, opt RestoreOptions, event string) (SnapshotMeta, error) {
 	if opt.Name == "" {
 		return SnapshotMeta{}, fmt.Errorf("a snapshot name is required")
 	}
@@ -225,7 +258,7 @@ func Restore(ctx context.Context, d UpDeps, dumper db.Dumper, opt RestoreOptions
 	}
 
 	if err := lock.WithLock(ctx, d.LockPath, func() error {
-		d.DB.LogEvent("db.restore", proj, fmt.Sprintf("%s into %s (%s, digest %s)", opt.Name, dbName, generate.SharedAlias(inst), digest))
+		d.DB.LogEvent(event, proj, fmt.Sprintf("%s into %s (%s, digest %s)", opt.Name, dbName, generate.SharedAlias(inst), digest))
 		return nil
 	}); err != nil {
 		return SnapshotMeta{}, err
