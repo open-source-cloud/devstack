@@ -39,18 +39,22 @@ func newDashboardCmd(g *GlobalOpts) *cobra.Command {
 			// this reconcile takes the lock only if it prunes — same as status).
 			_, _ = mgr.Reconcile(cmd.Context())
 
+			// Stats default ON for the cockpit; --no-stats disables the per-container
+			// ContainerStats fetch for low-power machines (spec 16 §gotchas [Q-DASH-STATS]).
+			stats := !noStats
+
 			if !dashboardInteractive(cmd, g) {
-				return printDashboardSnapshot(cmd, g, mgr)
+				return printDashboardSnapshot(cmd, g, mgr, stats)
 			}
 
 			ctx := cmd.Context()
-			fetch := func(c context.Context) dashboardData { return collectDashboardData(c, mgr) }
+			fetch := func(c context.Context) dashboardData { return collectDashboardData(c, mgr, stats) }
 			model := newDashboardModel(ctx, fetch, dashboardPoll)
 			_, err = tea.NewProgram(model, tea.WithContext(ctx)).Run()
 			return err
 		},
 	}
-	cmd.Flags().BoolVar(&noStats, "no-stats", false, "reserved: disable the CPU/mem stats stream (stats are opt-in in this build)")
+	cmd.Flags().BoolVar(&noStats, "no-stats", false, "disable the per-container CPU/mem stats fetch (lower overhead)")
 	return cmd
 }
 
@@ -67,7 +71,7 @@ func dashboardInteractive(cmd *cobra.Command, g *GlobalOpts) bool {
 // printDashboardSnapshot is the non-TTY fallback: a one-shot projection reusing
 // the same shared-status + per-project views as `status`, plus a redirect to the
 // scriptable commands.
-func printDashboardSnapshot(cmd *cobra.Command, g *GlobalOpts, mgr *workspace.Manager) error {
+func printDashboardSnapshot(cmd *cobra.Command, g *GlobalOpts, mgr *workspace.Manager, stats bool) error {
 	ctx := cmd.Context()
 	projects := collectProjectStatus(ctx, mgr)
 	shared, err := mgr.Status()
@@ -75,7 +79,14 @@ func printDashboardSnapshot(cmd *cobra.Command, g *GlobalOpts, mgr *workspace.Ma
 		return err
 	}
 	if g.JSON {
-		return writeJSON(cmd, map[string]any{"projects": projects, "shared": shared})
+		out := map[string]any{"projects": projects, "shared": shared}
+		// Include live stats when enabled and available, keyed by the same
+		// service display name the TUI rows use (spec 16: keep the snapshot path
+		// working, include stats when available).
+		if st := collectDashboardStats(ctx, mgr.Docker, stats); len(st) > 0 {
+			out["stats"] = st
+		}
+		return writeJSON(cmd, out)
 	}
 	if g.Quiet {
 		return nil
@@ -91,7 +102,7 @@ func printDashboardSnapshot(cmd *cobra.Command, g *GlobalOpts, mgr *workspace.Ma
 // collectDashboardData is the read-only collector: it fans in shared-service rows
 // (ledger), per-project service rows (live containers + health), and a bounded
 // tail of recent log lines into one snapshot. Lock-free.
-func collectDashboardData(ctx context.Context, mgr *workspace.Manager) dashboardData {
+func collectDashboardData(ctx context.Context, mgr *workspace.Manager, stats bool) dashboardData {
 	var data dashboardData
 
 	shared, err := mgr.Status()
@@ -121,8 +132,62 @@ func collectDashboardData(ctx context.Context, mgr *workspace.Manager) dashboard
 		}
 	}
 
+	attachDashboardStats(ctx, mgr.Docker, data.Rows, stats)
+
 	data.Logs = collectRecentLogs(ctx, mgr.Docker, 8)
 	return data
+}
+
+// attachDashboardStats fetches a live CPU/mem sample per visible container (a
+// bounded, read-only fetch — one call each, no streaming reader) and folds it
+// into the matching rows. A disabled flag or an unreadable container leaves the
+// row's HasStats false, which the table renders as "—". Best-effort: never fatal.
+func attachDashboardStats(ctx context.Context, client docker.Client, rows []dashRow, enabled bool) {
+	byKey := collectDashboardStats(ctx, client, enabled)
+	if len(byKey) == 0 {
+		return
+	}
+	for i := range rows {
+		if st, ok := byKey[rows[i].Name]; ok {
+			rows[i].HasStats = true
+			rows[i].CPUPercent = st.CPUPercent
+			rows[i].MemUsage = st.MemUsage
+			rows[i].MemLimit = st.MemLimit
+		}
+	}
+}
+
+// collectDashboardStats resolves the workspace's managed containers and fetches
+// one resource-usage sample each, keyed by the row's display name (the shared
+// DNS alias, or "<project>/<service>"). Returns nil when stats are disabled — the
+// --no-stats path so a low-power machine issues zero ContainerStats calls.
+func collectDashboardStats(ctx context.Context, client docker.Client, enabled bool) map[string]docker.Stats {
+	if !enabled {
+		return nil
+	}
+	targets, err := resolveLogTargets(ctx, client, nil)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]docker.Stats, len(targets))
+	for _, t := range targets {
+		st, err := client.ContainerStats(ctx, t.ID)
+		if err != nil {
+			continue // unreadable container: leave the row without stats
+		}
+		out[dashStatsKey(t)] = st
+	}
+	return out
+}
+
+// dashStatsKey maps a log target onto the dashboard row's display name so stats
+// join to the right row: a shared service by its DNS alias, a project service by
+// "<project>/<service>". logTarget.Project is empty for shared services.
+func dashStatsKey(t logTarget) string {
+	if t.Project != "" {
+		return t.Project + "/" + t.Service
+	}
+	return t.Service
 }
 
 // dashEngine renders a shared row's "engine version" detail.

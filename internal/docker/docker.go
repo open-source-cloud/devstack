@@ -62,6 +62,12 @@ type Client interface {
 	// mode, ctx cancellation, or the container stopping while following. Non-TTY
 	// containers are demuxed through stdcopy; TTY containers stream raw. Read-only.
 	ContainerLogStream(ctx context.Context, id string, opts LogOptions) (<-chan LogLine, error)
+	// ContainerStats retrieves a single, decoded resource-usage sample for one
+	// container (spec 16 CPU/mem columns): CPU% computed from the cpu/precpu
+	// delta plus cache-adjusted memory usage/limit. It opens no streaming reader
+	// (the daemon includes a previous sample so one call yields a CPU delta), so
+	// the dashboard can fetch it per visible container on each poll. Read-only.
+	ContainerStats(ctx context.Context, id string) (Stats, error)
 	// Close releases the underlying connection.
 	Close() error
 }
