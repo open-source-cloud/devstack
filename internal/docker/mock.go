@@ -23,11 +23,17 @@ type MockClient struct {
 	Details map[string]ContainerDetails
 	// LogLines maps a container ID or name to its canned log text.
 	LogLines map[string]string
+	// Streams maps a container ID or name to the demuxed lines ContainerLogStream
+	// emits (in order) before closing the channel — the seam for logs/dashboard
+	// tests without a daemon.
+	Streams map[string][]LogLine
 	// NetworkErr / ListErr / InspectErr / LogsErr force the op to fail.
 	NetworkErr error
 	ListErr    error
 	InspectErr error
 	LogsErr    error
+	// StreamErr forces ContainerLogStream to fail (e.g. the unreadable-driver case).
+	StreamErr error
 }
 
 var _ Client = (*MockClient)(nil)
@@ -116,6 +122,27 @@ func (m *MockClient) ContainerLogs(_ context.Context, id string, tail int) (stri
 	if tail > 0 {
 		out = lastLines(out, tail)
 	}
+	return out, nil
+}
+
+// ContainerLogStream emits the seeded lines for id then closes the channel,
+// honoring ctx cancellation so follow-mode teardown is testable without a daemon.
+func (m *MockClient) ContainerLogStream(ctx context.Context, id string, _ LogOptions) (<-chan LogLine, error) {
+	if m.StreamErr != nil {
+		return nil, m.StreamErr
+	}
+	lines := m.Streams[id]
+	out := make(chan LogLine, len(lines)+1)
+	go func() {
+		defer close(out)
+		for _, ll := range lines {
+			select {
+			case out <- ll:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 	return out, nil
 }
 

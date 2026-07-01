@@ -55,8 +55,33 @@ type Client interface {
 	// stdout+stderr (tail<=0 means all) — the fail-fast diagnostic inlined when a
 	// dependency goes unhealthy or exits during `up` (spec 10). Read-only.
 	ContainerLogs(ctx context.Context, id string, tail int) (string, error)
+	// ContainerLogStream opens a demuxed, optionally-following log stream for one
+	// container (spec 16). It returns a channel of per-line records tagged with
+	// their stream (stdout/stderr) and, when opts.Timestamps is set, the container
+	// timestamp. The channel is closed when the stream ends: EOF in non-follow
+	// mode, ctx cancellation, or the container stopping while following. Non-TTY
+	// containers are demuxed through stdcopy; TTY containers stream raw. Read-only.
+	ContainerLogStream(ctx context.Context, id string, opts LogOptions) (<-chan LogLine, error)
 	// Close releases the underlying connection.
 	Close() error
+}
+
+// LogOptions configures a ContainerLogStream. Tail<=0 means "all"; Since accepts
+// either a duration (e.g. "10m") or a timestamp, passed straight to the Engine.
+type LogOptions struct {
+	Follow     bool
+	Tail       int
+	Since      string
+	Timestamps bool
+}
+
+// LogLine is one demuxed log line from a container. TS is the RFC3339Nano
+// container timestamp when the stream was opened with Timestamps (empty
+// otherwise); Text never carries a trailing newline.
+type LogLine struct {
+	Stream string // "stdout" | "stderr"
+	TS     string // container timestamp, "" unless Timestamps requested
+	Text   string
 }
 
 // HealthStatus mirrors Docker's .State.Health.Status. The empty string means the
@@ -84,6 +109,7 @@ type ContainerDetails struct {
 	Running  bool         // .State.Running
 	ExitCode int          // .State.ExitCode (meaningful once exited)
 	Health   HealthStatus // "" when the container has no Health block
+	TTY      bool         // .Config.Tty — a TTY container's logs are NOT stdcopy-framed
 }
 
 // HasHealthcheck reports whether the container declares a healthcheck (so its
