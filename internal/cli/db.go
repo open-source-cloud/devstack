@@ -253,7 +253,12 @@ func newDbPullCmd(g *GlobalOpts) *cobra.Command {
 				return err
 			}
 			defer closeFn()
-			dumper := defaultPgDumper()
+			// db pull is Postgres-only; SelectDumper replaced the defaultPgDumper
+			// helper when snapshot/restore gained Redis+MinIO dumpers (#105).
+			dumper, err := orchestrate.SelectDumper(d, "pg")
+			if err != nil {
+				return err
+			}
 			if err := dumper.Preflight(cmd.Context()); err != nil {
 				return err
 			}

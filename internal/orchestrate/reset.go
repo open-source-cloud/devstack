@@ -53,7 +53,9 @@ const terminateBackendsSQL = `SELECT pg_terminate_backend(pid) FROM pg_stat_acti
 // terminate → DROP → re-provision DDL runs inside the flock; the loopback overlay
 // is applied outside it (engineTarget self-locks the port allocation).
 func Reset(ctx context.Context, d UpDeps, opt ResetOptions) (ResetResult, error) {
-	proj, dbName, inst, err := resolveTenant(d, opt.Project, opt.Database, opt.Instance)
+	// db reset is Postgres-only; pass the "pg" kind and ignore the engine/label
+	// returns added when snapshot/restore gained Redis+MinIO dumpers (#105).
+	proj, dbName, inst, _, _, err := resolveTenant(d, "pg", opt.Project, opt.Database, opt.Instance)
 	if err != nil {
 		return ResetResult{}, err
 	}
