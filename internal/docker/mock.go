@@ -27,6 +27,12 @@ type MockClient struct {
 	// emits (in order) before closing the channel — the seam for logs/dashboard
 	// tests without a daemon.
 	Streams map[string][]LogLine
+	// Stats maps a container ID or name to its canned resource-usage sample the
+	// dashboard's stats fetch reads — the seam for CPU/mem tests without a daemon.
+	Stats map[string]Stats
+	// StatsCalls counts ContainerStats invocations so a test can assert the
+	// --no-stats path skips the fetch entirely.
+	StatsCalls int
 	// NetworkErr / ListErr / InspectErr / LogsErr force the op to fail.
 	NetworkErr error
 	ListErr    error
@@ -34,6 +40,8 @@ type MockClient struct {
 	LogsErr    error
 	// StreamErr forces ContainerLogStream to fail (e.g. the unreadable-driver case).
 	StreamErr error
+	// StatsErr forces ContainerStats to fail.
+	StatsErr error
 }
 
 var _ Client = (*MockClient)(nil)
@@ -144,6 +152,17 @@ func (m *MockClient) ContainerLogStream(ctx context.Context, id string, _ LogOpt
 		}
 	}()
 	return out, nil
+}
+
+// ContainerStats returns the seeded sample for id (by ID or name) and records
+// the call, so tests can both feed the model and assert the fetch was (or was
+// not) issued. An unseeded id yields a zero Stats value, not an error.
+func (m *MockClient) ContainerStats(_ context.Context, id string) (Stats, error) {
+	m.StatsCalls++
+	if m.StatsErr != nil {
+		return Stats{}, m.StatsErr
+	}
+	return m.Stats[id], nil
 }
 
 // lastLines returns the final n lines of s, preserving a trailing newline.

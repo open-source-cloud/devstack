@@ -21,6 +21,14 @@ type dashRow struct {
 	Projects []string // shared: the referencing projects
 	Engine   string   // shared: engine + version
 	URL      string   // project: https://<svc>.<proj>.localhost
+
+	// Live resource usage (spec 16 CPU/mem columns), populated per visible
+	// container on each poll unless --no-stats disabled the fetch. HasStats
+	// distinguishes "0.0%" (a real, idle sample) from "no sample taken".
+	HasStats   bool
+	CPUPercent float64 // engine-computed CPU% (VM-skewed on Desktop/WSL2)
+	MemUsage   uint64  // cache-adjusted bytes
+	MemLimit   uint64  // bytes; 0 when unlimited/unknown
 }
 
 // dashLog is one recent, service-tagged log line for the bottom pane.
@@ -86,8 +94,10 @@ func newDashboardModel(ctx context.Context, fetch func(context.Context) dashboar
 	t := table.New(
 		table.WithColumns([]table.Column{
 			{Title: "SERVICE", Width: 22},
-			{Title: "STATE", Width: 10},
-			{Title: "HEALTH", Width: 10},
+			{Title: "STATE", Width: 9},
+			{Title: "HEALTH", Width: 9},
+			{Title: "CPU% (engine)", Width: 13},
+			{Title: "MEM", Width: 11},
 			{Title: "REFS", Width: 18},
 		}),
 		table.WithFocused(true),
@@ -219,6 +229,9 @@ func (m dashboardModel) selectedDetail() string {
 		state += " (" + r.Health + ")"
 	}
 	parts = append(parts, "state: "+state)
+	if r.HasStats {
+		parts = append(parts, fmt.Sprintf("cpu: %.1f%%", r.CPUPercent), "mem: "+dashMem(r))
+	}
 	return strings.Join(parts, "   ")
 }
 
@@ -245,9 +258,45 @@ func dashTableRows(rows []dashRow) []table.Row {
 		case r.URL != "":
 			refs = r.URL
 		}
-		out = append(out, table.Row{r.Name, r.State, r.Health, refs})
+		out = append(out, table.Row{r.Name, r.State, r.Health, dashCPU(r), dashMem(r), refs})
 	}
 	return out
+}
+
+// dashCPU renders a row's CPU% cell — "—" when no sample was taken (stats off or
+// an unreadable container), else one decimal place.
+func dashCPU(r dashRow) string {
+	if !r.HasStats {
+		return "—"
+	}
+	return fmt.Sprintf("%.1f%%", r.CPUPercent)
+}
+
+// dashMem renders a row's memory cell as "usage/limit" (or just usage when the
+// Engine reports no limit); "—" when no sample was taken.
+func dashMem(r dashRow) string {
+	if !r.HasStats {
+		return "—"
+	}
+	if r.MemLimit == 0 {
+		return formatBytes(r.MemUsage)
+	}
+	return formatBytes(r.MemUsage) + "/" + formatBytes(r.MemLimit)
+}
+
+// formatBytes renders a byte count in binary units with no decimals below 1 KiB
+// and one decimal above, for a compact, stable dashboard cell.
+func formatBytes(b uint64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%dB", b)
+	}
+	div, exp := uint64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
 func clampLogs(logs []dashLog) []dashLog {
