@@ -1,0 +1,29 @@
+{
+  "folders": [
+    {
+      "name": "api",
+      "path": "services/api"
+    },
+    {
+      "name": "web",
+      "path": "services/web"
+    },
+    {
+      "name": "devstack (generated)",
+      "path": ".devstack"
+    }
+  ],
+  "settings": {
+    "yaml.schemas": {
+      "https://raw.githubusercontent.com/open-source-cloud/devstack/v1.2.3/schemas/devstack.schema.json": [
+        "workspace.yaml",
+        "**/devstack.yaml"
+      ]
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-vscode-remote.remote-containers"
+    ]
+  }
+}

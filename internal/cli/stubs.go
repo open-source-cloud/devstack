@@ -28,11 +28,11 @@ func rootName(c *cobra.Command) string { return c.Root().Name() }
 
 // addStubCommands reserves the post-1.0 command surface from spec 07 as
 // milestone-tagged placeholders so `--help`/completions stay consistent (exit 0,
-// clear notice). `shell` has GRADUATED to a real command (spec 26); `logs` and
-// `dashboard` have GRADUATED to real commands (spec 16, see logs.go/dashboard.go).
-// `db` has GRADUATED to a real command group (spec 29, see db.go).
+// clear notice). Every verb that once lived here has GRADUATED to a real command:
+// `shell` (spec 26), `logs`/`dashboard` (spec 16), `telemetry` (spec 20), `ide`
+// (spec 17), and the `db` group (spec 15/29). None remain in this root list; the
+// `stub` helper still backs the `db reset`/`db pull` and template-registry
+// (spec 19) placeholders. Kept as a no-op seam for the next reserved verb.
 func addStubCommands(root *cobra.Command, _ *GlobalOpts) {
-	root.AddCommand(
-		stub("ide", "Generate devcontainer/.code-workspace/launch configs", "v2 (spec 17)"),
-	)
+	root.AddCommand()
 }

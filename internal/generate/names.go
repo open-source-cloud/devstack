@@ -43,6 +43,11 @@ const StateFile = "state.json"
 // projectStackName is the compose project name for a project stack.
 func projectStackName(project string) string { return "devstack-" + project }
 
+// ProjectStackName is the exported compose project name for a project stack. IDE
+// artifacts (internal/ide, spec 17) reference it so the editor's `compose up`
+// lands in the SAME tool-owned project as `devstack up` — never a forked one.
+func ProjectStackName(project string) string { return projectStackName(project) }
+
 // sharedAlias is the stable DNS alias a shared service is reached by over the
 // shared network (never the bare service name — the collision guardrail).
 func sharedAlias(name string) string { return "shared-" + name }
