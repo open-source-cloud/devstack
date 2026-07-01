@@ -167,3 +167,53 @@ func TestDestroyWorkspaceTeardown(t *testing.T) {
 		t.Error("project .devstack/ should be removed")
 	}
 }
+
+func TestDestroyWorkspacePurgeDataRemovesSharedVolumes(t *testing.T) {
+	d, fr := destroyFixture(t)
+	ctx := context.Background()
+
+	if err := d.Manager.RegisterUp(ctx, "app"); err != nil {
+		t.Fatalf("register up: %v", err)
+	}
+
+	// --purge-data: once this workspace's refs are released the shared stack is
+	// fully orphaned, so its volumes are removed via `compose down -v`.
+	res := destroyWorkspace(ctx, d, []string{"app"}, true)
+	if len(res.Errors) != 0 {
+		t.Fatalf("destroy errors: %v", res.Errors)
+	}
+	if !fr.saw("-p "+generate.SharedStackName, "down", "--volumes") {
+		t.Errorf("purge-data must `compose down -v` the shared stack: %v", fr.cmds)
+	}
+	if len(res.PurgedVolumes) == 0 {
+		t.Errorf("PurgedVolumes should be populated, got %v", res.PurgedVolumes)
+	}
+}
+
+func TestDestroyWorkspacePurgeDataKeepsVolumesWhenReferenced(t *testing.T) {
+	d, fr := destroyFixture(t)
+	ctx := context.Background()
+
+	if err := d.Manager.RegisterUp(ctx, "app"); err != nil {
+		t.Fatalf("register up: %v", err)
+	}
+	// A SECOND project is genuinely LIVE (a running container) and still references
+	// the shared postgres, so reconcile keeps its ref and even --purge-data must NOT
+	// remove the shared volumes (data another consumer depends on survives).
+	mc := d.Docker.(*docker.MockClient)
+	mc.Containers = append(mc.Containers, docker.Container{
+		ID: "other1", Name: "devstack-other-web-1", State: "running",
+		Labels: map[string]string{generate.LabelManaged: "true", generate.LabelProject: "other"},
+	})
+	if err := d.DB.AddRef("other", "web", "shared-postgres"); err != nil {
+		t.Fatalf("seed foreign ref: %v", err)
+	}
+
+	res := destroyWorkspace(ctx, d, []string{"app"}, true)
+	if fr.saw(generate.SharedStackName, "down", "--volumes") {
+		t.Errorf("must NOT down -v the shared stack while another project refs it: %v", fr.cmds)
+	}
+	if len(res.PurgedVolumes) != 0 {
+		t.Errorf("PurgedVolumes must be empty when refs remain, got %v", res.PurgedVolumes)
+	}
+}

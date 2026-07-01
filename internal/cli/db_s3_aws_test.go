@@ -124,6 +124,28 @@ func TestAwsEnvInjectsCredsNotArgv(t *testing.T) {
 	}
 }
 
+func TestAwsHelpShortCircuits(t *testing.T) {
+	// In an empty dir there is no workspace, so buildUpDeps + any daemon access
+	// would fail. `aws --help` (and bare `aws`) must still exit 0 by printing the
+	// shim's own help BEFORE constructing any docker/S3 client.
+	for _, args := range [][]string{{"aws", "--help"}, {"aws", "-h"}, {"aws"}} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			var out strings.Builder
+			root := NewRootCmd(Options{})
+			root.SetArgs(args)
+			root.SetOut(&out)
+			root.SetErr(&out)
+			if err := root.Execute(); err != nil {
+				t.Fatalf("`devstack %s` should exit 0 via help, got: %v", strings.Join(args, " "), err)
+			}
+			if !strings.Contains(out.String(), "aws") || !strings.Contains(out.String(), "Usage") {
+				t.Errorf("help output missing usage text: %q", out.String())
+			}
+		})
+	}
+}
+
 func TestAwsAbsentBinaryError(t *testing.T) {
 	t.Setenv("PATH", t.TempDir()) // an empty dir → no `aws` on PATH
 	if _, err := lookupAws(); err == nil {

@@ -120,6 +120,11 @@ func newS3RbCmd(g *GlobalOpts) *cobra.Command {
 				}
 			}
 			r := resource.Resource{Engine: "minio", Kind: "bucket", Name: bucket, Owner: proj}
+			if force {
+				// Recursively purge every object before removing the bucket, so a
+				// non-empty bucket can be deleted (the provisioner empties it first).
+				r.Params = map[string]any{"force": true}
+			}
 			if err := orchestrate.DropResource(cmd.Context(), d, r, true); err != nil {
 				return err
 			}

@@ -2,12 +2,74 @@ package orchestrate
 
 import (
 	"context"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/open-source-cloud/devstack/internal/resource"
+	"github.com/open-source-cloud/devstack/internal/secrets"
 )
+
+// fakePusher records the entries a generated credential is routed to, so a test
+// can assert the value went to the Pusher (a backend) and never to disk.
+type fakePusher struct{ entries []secrets.SecretEntry }
+
+func (f *fakePusher) Push(_ context.Context, entries []secrets.SecretEntry) error {
+	f.entries = append(f.entries, entries...)
+	return nil
+}
+
+func TestCreateResourceGeneratedCredPushedNeverOnDisk(t *testing.T) {
+	d, _, _ := upFixture(t)
+	rp := &recordingPg{}
+	d.PgConnect = rp.connect
+	fp := &fakePusher{}
+	d.CredPusher = fp
+
+	_, err := CreateResource(context.Background(), d, resource.Resource{
+		Engine: "postgres", Kind: "database", Name: "reports", Owner: "app",
+		CredKind: resource.CredGenerated,
+	})
+	if err != nil {
+		t.Fatalf("CreateResource: %v", err)
+	}
+
+	// The generated value was routed through the Pusher exactly once.
+	if len(fp.entries) != 1 {
+		t.Fatalf("pusher received %d entries, want 1: %+v", len(fp.entries), fp.entries)
+	}
+	val := fp.entries[0].Value
+	if len(val) != 24 {
+		t.Errorf("generated value len = %d, want 24 (%q)", len(val), val)
+	}
+	for _, r := range val {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+			t.Fatalf("generated value not alphanumeric: %q", val)
+		}
+	}
+	if fp.entries[0].Path == "" {
+		t.Error("pushed entry must carry a backend path")
+	}
+
+	// Leak assertion: the generated value must appear in NO file under the workspace
+	// (generated compose, overlays, the ledger — nothing).
+	_ = filepath.WalkDir(d.Model.Root, func(path string, de fs.DirEntry, werr error) error {
+		if werr != nil || de.IsDir() {
+			return nil
+		}
+		b, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return nil
+		}
+		if strings.Contains(string(b), val) {
+			t.Errorf("generated credential leaked into %s", path)
+		}
+		return nil
+	})
+}
 
 func TestCreateResourceImperative(t *testing.T) {
 	d, fr, db := upFixture(t)
