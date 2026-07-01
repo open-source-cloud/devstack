@@ -46,7 +46,14 @@ type UpDeps struct {
 	Source   template.TemplateSource
 	LockPath string
 
-	Runner   docker.Runner     // compose CLI runner (nil → docker.ExecRunner)
+	Runner docker.Runner // compose CLI runner (nil → docker.ExecRunner)
+	// Backend selects WHERE the stack runs (spec 21): the local daemon (zero value,
+	// default) or a remote `docker context`/DOCKER_HOST endpoint. Its ComposeEnv()
+	// pins every compose invocation to that endpoint; its Reachability() gates the
+	// host-port publish (a remote bridge is not host-routable). The read-only
+	// d.Docker client and the state ledger's context key are already bound to this
+	// backend by the caller (buildUpDeps).
+	Backend  docker.Backend
 	Env      map[string]string // generate env (nil → process env, via generate default)
 	Profile  string            // env-overlay profile for ${profile} (generate); "" → workspace default
 	Profiles []string          // spec-12 SERVICE SLICES (--profile, repeatable); empty → defaultProfile/all
@@ -401,6 +408,21 @@ func sharedPhase(d UpDeps, projects, names, provInstances []string) Phase {
 				Project: generate.SharedStackName,
 				File:    filepath.Join(outDir, generate.ComposeFile),
 				Dir:     outDir, Runner: d.Runner,
+				ContextEnv: d.Backend.ComposeEnv(),
+			}
+			// Remote backend: a remote bridge network is NOT host-routable, so we do
+			// NOT publish a loopback provision port — host-side pgx cannot reach it
+			// (spec 21 §Network reachability). Provisioning the shared Postgres over a
+			// remote backend needs an SSH local-forward/tunnel, which is the flagged
+			// follow-up; fail clearly rather than silently publish a port the laptop
+			// can't dial. `up` still works for the non-provisioned remote shared stack
+			// (redis/minio, or postgres with no host-provisioned consumer) and with
+			// --no-provision.
+			if len(prov) > 0 && d.Backend.Reachability() == docker.ViaProxy {
+				return nil, fmt.Errorf("provisioning the shared Postgres over a %s is not supported yet: "+
+					"a remote shared network is not host-routable, so host-side provisioning needs an SSH tunnel "+
+					"(spec 21 follow-up). Re-run with --no-provision, or provision from the remote host",
+					d.Backend.String())
 			}
 			// Publish each provisioned Postgres on 127.0.0.1:<ledger port> via an
 			// up-time overlay so host-side pgx (the provision phase) can reach it,
@@ -491,6 +513,8 @@ func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string, ser
 			// compose-up process env (Compose substitutes the valueless keys); they
 			// are never written to a file (§7.5).
 			Env: secretEnv[project],
+			// Pin compose to the selected backend endpoint (spec 21); empty for local.
+			ContextEnv: d.Backend.ComposeEnv(),
 		}
 	}
 	return Phase{

@@ -44,8 +44,20 @@ func newValidator() *validator.Validate {
 	_ = v.RegisterValidation("platform", func(fl validator.FieldLevel) bool {
 		return platformRE.MatchString(fl.Field().String())
 	})
+	// dockerhost: a DOCKER_HOST endpoint for the remote-backend selector (spec 21).
+	// Paired with omitempty so an unset field is allowed; only a non-empty value is
+	// checked against the schemes docker understands.
+	_ = v.RegisterValidation("dockerhost", func(fl validator.FieldLevel) bool {
+		return dockerHostRE.MatchString(fl.Field().String())
+	})
 	return v
 }
+
+// dockerHostRE matches the DOCKER_HOST endpoint schemes the docker CLI accepts
+// (spec 21). ssh:// is the primary remote path (inherits the user's SSH setup);
+// tcp:// (optionally TLS-guarded) and the local unix://npipe:// sockets round it
+// out. Deliberately strict so a typo'd endpoint fails at config-load, not mid-up.
+var dockerHostRE = regexp.MustCompile(`^(ssh|tcp|unix|npipe|fd)://.+`)
 
 // platformRE matches a compose `platform:` selector: os/arch with an optional
 // variant (e.g. linux/amd64, linux/arm64/v8).
@@ -84,7 +96,28 @@ func validateModel(m *Model, ws *source, projSrc map[string]*source) error {
 	if err := validateResources(m, projSrc); err != nil {
 		return err
 	}
+	if err := validateBackend(m, ws); err != nil {
+		return err
+	}
 	return detectCycles(m)
+}
+
+// validateBackend enforces the spec-21 remote-backend selector rules that a
+// single field tag cannot express: Context and Host are mutually exclusive (both
+// set is ambiguous — DOCKER_CONTEXT and DOCKER_HOST would contend). An unset
+// block (nil) is the default local backend and always valid. Positioned to
+// workspace.yaml so the error renders as file:line:col like every other config
+// error.
+func validateBackend(m *Model, ws *source) error {
+	b := m.Workspace.Backend
+	if b == nil {
+		return nil
+	}
+	if b.Context != "" && b.Host != "" {
+		return ws.errAt("$.backend",
+			"backend: set either `context` or `host`, not both (they select the remote Docker endpoint two different ways)")
+	}
+	return nil
 }
 
 // validateResources checks the spec-27 declarative `resources:` block on each
