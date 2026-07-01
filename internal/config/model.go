@@ -103,7 +103,24 @@ type Project struct {
 	Kind       string             `yaml:"kind" validate:"required,eq=Project"`
 	Name       string             `yaml:"name" validate:"required,dsname"`
 	Services   map[string]Service `yaml:"services" validate:"required,dive"`
-	Hooks      Hooks              `yaml:"hooks"` // spec 11 — project-scope lifecycle hooks
+	Hooks      Hooks              `yaml:"hooks"`                     // spec 11 — project-scope lifecycle hooks
+	Resources  []ResourceDecl     `yaml:"resources" validate:"dive"` // spec 27 — declarative data-plane resources
+}
+
+// ResourceDecl is one declarative data-plane resource a project needs INSIDE a
+// shared engine (spec 27): a database, bucket, lifecycle policy, queue, … `up`
+// provisions each idempotently. The block is additive and forward-tolerant
+// (unknown keys are ignored, never fatal); the cross-ref resolver checks `uses`
+// targets a declared shared instance, `kind` is one the engine supports, and no
+// two resources collide on (engine, name). Removing an entry NEVER auto-drops the
+// resource (Q-RESOURCE-DRIFT) — teardown is always explicit + confirmed.
+type ResourceDecl struct {
+	Uses        string         `yaml:"uses" validate:"required"` // workspace.shared.<name>
+	Kind        string         `yaml:"kind" validate:"required"` // database|user|bucket|lifecycle|queue|stream|topic
+	Name        string         `yaml:"name"`                     // engine-level identifier (default: project name)
+	Engine      string         `yaml:"engine"`                   // optional; inferred from the uses target's template
+	Params      map[string]any `yaml:"params"`                   // kind-specific knobs
+	Credentials string         `yaml:"credentials" validate:"omitempty,oneof=predictable generated"`
 }
 
 // Service is one container in a project stack.

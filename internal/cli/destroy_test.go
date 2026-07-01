@@ -128,7 +128,7 @@ func TestDestroyWorkspaceTeardown(t *testing.T) {
 		t.Fatalf("precondition: ref count = %d, want 1", n)
 	}
 
-	res := destroyWorkspace(ctx, d, []string{"app"})
+	res := destroyWorkspace(ctx, d, []string{"app"}, false)
 	if len(res.Errors) != 0 {
 		t.Fatalf("destroy errors: %v", res.Errors)
 	}

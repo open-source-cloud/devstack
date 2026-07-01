@@ -161,6 +161,39 @@ func TestProvisionedLedger(t *testing.T) {
 	}
 }
 
+func TestRemoveProvisionedSingleRow(t *testing.T) {
+	db := openTestDB(t)
+	_ = db.RecordProvisioned("api", "database", "api")
+	_ = db.RecordProvisioned("api", "role", "api")
+	_ = db.RecordProvisioned("api", "bucket", "api-uploads") // free-text kind, no migration
+
+	// Remove exactly one (kind,name); the siblings survive (tenant-scoped teardown).
+	if err := db.RemoveProvisioned("api", "bucket", "api-uploads"); err != nil {
+		t.Fatalf("RemoveProvisioned: %v", err)
+	}
+	rows, _ := db.ProvisionedFor("api")
+	if len(rows) != 2 {
+		t.Fatalf("after single remove, rows = %d, want 2 (%v)", len(rows), rows)
+	}
+	for _, r := range rows {
+		if r.Kind == "bucket" {
+			t.Errorf("bucket row should be gone, still present: %v", r)
+		}
+	}
+	// Idempotent: removing an absent row is a no-op, not an error.
+	if err := db.RemoveProvisioned("api", "bucket", "api-uploads"); err != nil {
+		t.Errorf("RemoveProvisioned of absent row should be a no-op, got %v", err)
+	}
+	// Does not touch another project's identically-named resource.
+	_ = db.RecordProvisioned("other", "database", "api")
+	if err := db.RemoveProvisioned("api", "database", "api"); err != nil {
+		t.Fatalf("RemoveProvisioned: %v", err)
+	}
+	if rows, _ := db.ProvisionedFor("other"); len(rows) != 1 {
+		t.Errorf("other project's row must survive, got %v", rows)
+	}
+}
+
 func TestRedisIndexAllocation(t *testing.T) {
 	db := openTestDB(t)
 	a, err := db.AllocateRedisIndex("api")

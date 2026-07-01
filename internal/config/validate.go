@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
+
+	"github.com/open-source-cloud/devstack/internal/resource"
 )
 
 // dsNameRE is the safe-identifier pattern for workspace/project/service/alias
@@ -64,7 +66,59 @@ func validateModel(m *Model, ws *source, projSrc map[string]*source) error {
 	if err := validateProfiles(m, ws); err != nil {
 		return err
 	}
+	if err := validateResources(m, projSrc); err != nil {
+		return err
+	}
 	return detectCycles(m)
+}
+
+// validateResources checks the spec-27 declarative `resources:` block on each
+// project: every `uses` targets a declared shared instance, `kind` is one the
+// target engine's provisioner supports (for known engines — unknown/custom
+// engines are forward-tolerant), and no two resources collide on (engine, name)
+// within a project (tenant-scoping: names are per-project). Positioned to the
+// project file.
+func validateResources(m *Model, projSrc map[string]*source) error {
+	for _, pname := range sortedKeys(m.Projects) {
+		p := m.Projects[pname]
+		src := projSrc[pname]
+		seen := map[string]bool{}
+		for i, d := range p.Resources {
+			r := parseRef(d.Uses)
+			if r.kind != refShared || r.attr != "" {
+				return src.errAt(fmt.Sprintf("$.resources[%d].uses", i),
+					"resources: uses %q must be a shared service reference of the form workspace.shared.<name>", d.Uses)
+			}
+			svc, ok := m.Workspace.Shared[r.name]
+			if !ok {
+				return src.errAt(fmt.Sprintf("$.resources[%d].uses", i),
+					"resources: shared service %q does not exist%s", r.name, suggest(r.name, m.SharedNames()))
+			}
+			engine := d.Engine
+			if engine == "" {
+				engine = svc.Template // inferred: the shared template name == its engine capability
+			}
+			if !resource.SupportsKind(engine, d.Kind) {
+				return src.errAt(fmt.Sprintf("$.resources[%d].kind", i),
+					"resources: kind %q is not supported by engine %q (supported: %s)",
+					d.Kind, engine, strings.Join(resource.Kinds(engine), ", "))
+			}
+			name := d.Name
+			if name == "" {
+				name = pname // default: the project name
+			}
+			// Collide on (engine, kind, name): a bucket and its lifecycle may share a
+			// name (they reference the same object), but two databases of the same
+			// name may not.
+			key := engine + "\x00" + d.Kind + "\x00" + name
+			if seen[key] {
+				return src.errAt(fmt.Sprintf("$.resources[%d].name", i),
+					"resources: duplicate %s resource %q on engine %q (a project may declare it once)", d.Kind, name, engine)
+			}
+			seen[key] = true
+		}
+	}
+	return nil
 }
 
 // validateProfiles checks the spec-12 service-slice config: every group's
