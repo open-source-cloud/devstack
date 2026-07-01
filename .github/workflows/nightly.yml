@@ -48,6 +48,29 @@ jobs:
       - name: nightly gate (fmt-check + vet + cross-build + test-race + determinism)
         run: make nightly
 
+  # Heavy cloud-engine command e2e (localstack + the `aws` shim, plus the full
+  # db/s3/expose command surface). It pulls large images (localstack), so it runs
+  # here as a nightly RELEASE GATE rather than on every PR — the per-PR CI already
+  # runs the lighter postgres+minio+redis command e2e (DEVSTACK_E2E=1). This is the
+  # "every command actually works against a live stack" gate.
+  e2e-cloud:
+    if: github.repository == 'open-source-cloud/devstack'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+      - name: docker available
+        run: docker version
+      - name: cloud command e2e (localstack health gate + aws shim + db/s3/expose)
+        env:
+          DEVSTACK_E2E: "1"
+          DEVSTACK_E2E_CLOUD: "1"
+        run: go test -tags=e2e ./tests/e2e/... -run 'Commands|LocalStack' -count=1 -v
+
   # Optional rolling pre-release. Default OFF: enable by setting the repo variable
   #   gh variable set NIGHTLY_PRERELEASE --body true
   # Produces goreleaser SNAPSHOT artifacts (no real version, no git tag) and uploads
