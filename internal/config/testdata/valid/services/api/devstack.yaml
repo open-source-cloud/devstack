@@ -6,6 +6,11 @@ services:
     template: php.laravel.nginx
     params: { phpVersion: "8.3" }
     memoryMB: 768
+    platform: linux/amd64
+    resources:
+      cpus: "1.5"
+      memoryReserveMB: 256
+      pidsLimit: 512
     uses:
       - workspace.shared.postgres
       - workspace.shared.redis

@@ -12,7 +12,10 @@ hooks:
   preUp:
     - { name: banner, run: host, command: ["true"] }
 shared:
-  postgres: { template: postgres, params: { version: "16" } }
+  postgres:
+    template: postgres
+    params: { version: "16" }
+    resources: { cpus: "2", memoryMB: 1024, memoryReserveMB: 512 }
   redis:    { template: redis,    params: { version: "7" } }
   minio:    { template: minio }
 projects:

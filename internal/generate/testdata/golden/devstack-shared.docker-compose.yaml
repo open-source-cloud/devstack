@@ -34,6 +34,14 @@ services:
         target: /data
         volume: {}
   postgres:
+    cpus: 2
+    deploy:
+      resources:
+        limits:
+          cpus: 2
+          memory: "1073741824"
+        reservations:
+          memory: "536870912"
     environment:
       POSTGRES_DB: devstack
       POSTGRES_PASSWORD: devstack
@@ -50,6 +58,7 @@ services:
       com.devstack.managed: "true"
       com.devstack.shared: postgres
       com.devstack.workspace: acme
+    mem_limit: "1073741824"
     networks:
       devstack_shared:
         aliases:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,8 +34,22 @@ func newValidator() *validator.Validate {
 		_, err := time.ParseDuration(fl.Field().String())
 		return err == nil
 	})
+	// cpus: a positive fractional-core string ("1.5", "2"). Emitted verbatim into
+	// the compose cpus/limits.cpus fields (spec 18); must parse as a float > 0.
+	_ = v.RegisterValidation("cpus", func(fl validator.FieldLevel) bool {
+		f, err := strconv.ParseFloat(fl.Field().String(), 64)
+		return err == nil && f > 0
+	})
+	// platform: an os/arch[/variant] selector ("linux/amd64", "linux/arm64/v8").
+	_ = v.RegisterValidation("platform", func(fl validator.FieldLevel) bool {
+		return platformRE.MatchString(fl.Field().String())
+	})
 	return v
 }
+
+// platformRE matches a compose `platform:` selector: os/arch with an optional
+// variant (e.g. linux/amd64, linux/arm64/v8).
+var platformRE = regexp.MustCompile(`^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$`)
 
 // structValidate runs validator/v10, recovering from the panic it raises on a
 // malformed tag (DECISIONS D16) so a tag bug never crashes the CLI.
@@ -193,6 +208,12 @@ func describeFieldError(fe validator.FieldError) string {
 		return fmt.Sprintf("%s = %q must be one of: %s", field, fe.Value(), strings.ReplaceAll(fe.Param(), " ", ", "))
 	case "duration":
 		return fmt.Sprintf("%s = %q is not a valid duration (e.g. \"5s\", \"1m30s\")", field, fe.Value())
+	case "cpus":
+		return fmt.Sprintf("%s = %q is not a valid cpu quantity (a positive number of cores, e.g. \"1.5\")", field, fe.Value())
+	case "platform":
+		return fmt.Sprintf("%s = %q is not a valid platform (expected os/arch, e.g. \"linux/amd64\")", field, fe.Value())
+	case "gte":
+		return fmt.Sprintf("%s must be >= %s", field, fe.Param())
 	case "min":
 		return fmt.Sprintf("%s must have at least %s element(s)", field, fe.Param())
 	default:
