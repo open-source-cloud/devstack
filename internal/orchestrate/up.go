@@ -131,9 +131,12 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 	// 127.0.0.1 by the shared phase so host-side pgx can reach them.
 	var targets []provTarget
 	var provInstances []string
+	var resDecls []resDecl
 	if !d.NoProvision {
 		targets = provTargets(d.Model, active.Services, pgInstances(d.Model))
 		provInstances = provInstanceList(targets)
+		// Declarative spec-27 resources for active projects on up instances.
+		resDecls = collectResourceDecls(d.Model, active)
 	}
 
 	phases = append(phases,
@@ -145,6 +148,12 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 	)
 	if len(targets) > 0 {
 		phases = append(phases, provisionPhase(d, targets))
+	}
+	// Declarative resources (spec 27): provisioned after the implicit postgres
+	// provision phase (which publishes the shared instances they reach), before
+	// the per-project compose-up/hooks.
+	if len(resDecls) > 0 {
+		phases = append(phases, resourcesPhase(d, resDecls))
 	}
 	// Hook ordering (spec 11): workspace preUp → per-project (preUp → compose-up →
 	// postUp) → workspace postUp.
