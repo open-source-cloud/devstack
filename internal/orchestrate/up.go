@@ -15,6 +15,7 @@ import (
 	"github.com/open-source-cloud/devstack/internal/hooks"
 	"github.com/open-source-cloud/devstack/internal/lock"
 	"github.com/open-source-cloud/devstack/internal/profile"
+	"github.com/open-source-cloud/devstack/internal/resource"
 	"github.com/open-source-cloud/devstack/internal/secrets"
 	"github.com/open-source-cloud/devstack/internal/state"
 	"github.com/open-source-cloud/devstack/internal/template"
@@ -59,6 +60,10 @@ type UpDeps struct {
 	// PgConnect opens an admin Postgres connection for the provision phase; nil →
 	// the pgx-backed default. Injected for tests (so provisioning runs daemon-free).
 	PgConnect PgConnector
+	// S3Factory builds the admin S3 client for the minio/localstack provisioners;
+	// nil → the real pure-Go aws-sdk-go-v2 path-style client. Injected for tests so
+	// bucket ops run without a live endpoint.
+	S3Factory resource.S3Factory
 
 	Build         bool          // compose up --build (honors the generate ledger's selective-rebuild hash)
 	Rebuild       bool          // force `compose build --no-cache` before up (spec 26 --rebuild)
@@ -375,7 +380,7 @@ func sharedPhase(d UpDeps, projects, names, provInstances []string) Phase {
 					}
 					ports[inst] = port
 				}
-				overlay, err := writeProvisionOverlay(d.Model.Root, ports)
+				overlay, err := writeProvisionOverlay(d.Model.Root, ports, 5432)
 				if err != nil {
 					return nil, err
 				}
