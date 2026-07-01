@@ -33,6 +33,7 @@ const (
 	ConfigFile   = "config.yaml"
 	TemplatesDir = "templates"
 	SharedDir    = "shared"
+	SnapshotsDir = "snapshots"
 )
 
 // Home returns the devstack home directory: $DEVSTACK_HOME if set, else
@@ -57,6 +58,13 @@ func TemplatesPath() string { return filepath.Join(Home(), TemplatesDir) }
 
 // SharedPath is the global shared-stack artifacts directory.
 func SharedPath() string { return filepath.Join(Home(), SharedDir) }
+
+// SnapshotsPath is the db-snapshot store for one workspace: dumps captured by
+// `devstack db snapshot` live under ~/.devstack/snapshots/<workspace>/ (spec 15).
+// Keyed by workspace so two checkouts' snapshots never collide.
+func SnapshotsPath(workspace string) string {
+	return filepath.Join(Home(), SnapshotsDir, workspace)
+}
 
 // Initialized reports whether the store config file exists.
 func Initialized() bool {

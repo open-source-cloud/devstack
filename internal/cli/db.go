@@ -6,6 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-source-cloud/devstack/internal/db"
+	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/orchestrate"
 	"github.com/open-source-cloud/devstack/internal/resource"
 	"github.com/open-source-cloud/devstack/internal/state"
@@ -14,8 +16,9 @@ import (
 // newDbCmd wires the `devstack db` group (spec 29 §databases): tenant-scoped
 // Postgres database + role/grant verbs on the shared engine. create/user/grant/
 // drop/gc mirror the up-saga provision flow (lock → overlay → provisioner →
-// ledger → event) via internal/orchestrate; list is a lock-free ledger read. This
-// graduates the reserved `db` stub. snapshot/restore/reset/pull stay v2 stubs.
+// ledger → event) via internal/orchestrate; list is a lock-free ledger read.
+// snapshot/restore (+ snapshot ls) graduate the spec-15 data-lifecycle verbs;
+// reset/pull stay v2 stubs.
 func newDbCmd(g *GlobalOpts) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "db",
@@ -28,13 +31,157 @@ func newDbCmd(g *GlobalOpts) *cobra.Command {
 		newDbListCmd(g),
 		newDbDropCmd(g),
 		newDbGcCmd(g),
-		// v2 data-lifecycle verbs (spec 15) reserved as stubs.
-		stub("snapshot", "Snapshot a project's database", "v2 (spec 15)"),
-		stub("restore", "Restore a project's database from a snapshot", "v2 (spec 15)"),
+		// spec-15 data-lifecycle verbs.
+		newDbSnapshotCmd(g),
+		newDbRestoreCmd(g),
+		// remaining spec-15 verbs (reset/pull) reserved as stubs.
 		stub("reset", "Drop and re-provision a project's database", "v2 (spec 15)"),
 		stub("pull", "Pull a database snapshot from a shared store", "v2 (spec 15)"),
 	)
 	return cmd
+}
+
+// defaultPgDumper is the real pg_dump/pg_restore/psql client, shelled behind the
+// docker exec runner (the release binary stays CGO-free — the tools are external).
+func defaultPgDumper() db.Dumper { return db.PgDumper{Runner: docker.ExecRunner{}} }
+
+// newDbSnapshotCmd wires `db snapshot [name]` (capture) with the `ls` subcommand
+// (list). A snapshot dumps ONLY the project's tenant database on the shared
+// Postgres to ~/.devstack/snapshots/<workspace>/ and records a ledger row (spec 15).
+func newDbSnapshotCmd(g *GlobalOpts) *cobra.Command {
+	var project, database, instance string
+	cmd := &cobra.Command{
+		Use:   "snapshot [name]",
+		Short: "Capture a project's tenant database to the snapshot store",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, closeFn, err := buildUpDeps(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			dumper := defaultPgDumper()
+			if err := dumper.Preflight(cmd.Context()); err != nil {
+				return err
+			}
+			var name string
+			if len(args) == 1 {
+				name = args[0]
+			}
+			meta, err := orchestrate.Snapshot(cmd.Context(), d, dumper, orchestrate.SnapshotOptions{
+				Project: project, Database: database, Instance: instance, Name: name,
+			})
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, meta)
+			}
+			if !g.Quiet {
+				fmt.Fprintf(cmd.OutOrStdout(), "captured snapshot %q of %s (%d bytes)\n%s\n", meta.Name, meta.Database, meta.Size, meta.Path)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "owner project (default: the workspace's single/first project)")
+	cmd.Flags().StringVar(&database, "db", "", "physical tenant database (default: the project's own database)")
+	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
+	cmd.AddCommand(newDbSnapshotLsCmd(g))
+	return cmd
+}
+
+func newDbSnapshotLsCmd(g *GlobalOpts) *cobra.Command {
+	var project string
+	cmd := &cobra.Command{
+		Use:   "ls",
+		Short: "List captured snapshots (lock-free)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			d, closeFn, err := buildUpDeps(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			snaps, err := orchestrate.ListSnapshots(d, project)
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, map[string]any{"snapshots": snaps})
+			}
+			w := cmd.OutOrStdout()
+			if len(snaps) == 0 {
+				fmt.Fprintln(w, "no snapshots")
+				return nil
+			}
+			for _, s := range snaps {
+				fmt.Fprintf(w, "%-24s %-12s %10d  %s  %s\n", s.Name, s.Database, s.Size, shortDigest(s.Digest), s.CreatedAt)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "only this project's snapshots")
+	return cmd
+}
+
+func newDbRestoreCmd(g *GlobalOpts) *cobra.Command {
+	var project, database, instance string
+	var force, yes bool
+	cmd := &cobra.Command{
+		Use:   "restore <name>",
+		Short: "Restore a project's tenant database from a snapshot (destructive)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if g.JSON && !yes {
+				return fmt.Errorf("refusing to restore without --yes for --json/non-interactive use")
+			}
+			d, closeFn, err := buildUpDeps(cmd)
+			if err != nil {
+				return err
+			}
+			defer closeFn()
+			dumper := defaultPgDumper()
+			if err := dumper.Preflight(cmd.Context()); err != nil {
+				return err
+			}
+			if !yes {
+				if !confirm(cmd, fmt.Sprintf("This REPLACES the tenant database from snapshot %q (current data destroyed). Type 'yes' to continue: ", args[0])) {
+					fmt.Fprintln(cmd.OutOrStdout(), "aborted")
+					return nil
+				}
+			}
+			meta, err := orchestrate.Restore(cmd.Context(), d, dumper, orchestrate.RestoreOptions{
+				Project: project, Database: database, Instance: instance, Name: args[0], Force: force,
+			})
+			if err != nil {
+				return err
+			}
+			if g.JSON {
+				return writeJSON(cmd, meta)
+			}
+			if !g.Quiet {
+				fmt.Fprintf(cmd.OutOrStdout(), "restored %s from snapshot %q (digest %s)\n", meta.Database, meta.Name, shortDigest(meta.Digest))
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&project, "project", "", "owner project (default: the workspace's single/first project)")
+	cmd.Flags().StringVar(&database, "db", "", "physical tenant database (default: the project's own database)")
+	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
+	cmd.Flags().BoolVar(&force, "force", false, "replay over a non-empty database (overwrite existing data)")
+	cmd.Flags().BoolVar(&yes, "yes", false, "skip the confirmation prompt (required for --json)")
+	return cmd
+}
+
+// shortDigest is a display helper: the first 12 hex chars of a sha256, or "-".
+func shortDigest(d string) string {
+	if len(d) >= 12 {
+		return d[:12]
+	}
+	if d == "" {
+		return "-"
+	}
+	return d
 }
 
 // sanitizePg maps a name to a safe Postgres identifier (hyphens → underscores),
