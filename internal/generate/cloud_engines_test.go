@@ -50,6 +50,31 @@ func TestCloudEngineTemplatesLint(t *testing.T) {
 	}
 }
 
+// TestLocalStackHealthGatesOnAvailable guards the fix for the "shared-localstack
+// unhealthy after 1 attempt" bug. LocalStack 3.x reports each configured SERVICE
+// as "available" on startup — a service only flips to "running" after its first
+// request. A healthcheck that greps solely for "running" therefore NEVER passes
+// (nothing is running until traffic arrives), the container stays unhealthy, and
+// the up saga aborts. The gate must accept "available".
+func TestLocalStackHealthGatesOnAvailable(t *testing.T) {
+	src := template.NewFSSource(templates.FS)
+	res, err := template.Resolve(src, "localstack", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compose, err := LintResolved("localstack", res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(compose)
+	if !strings.Contains(s, "available") {
+		t.Errorf("localstack healthcheck must accept the \"available\" state, not gate solely on \"running\":\n%s", s)
+	}
+	if strings.Contains(s, "grep -q running") {
+		t.Error("localstack healthcheck still greps solely for \"running\" — the deadlock bug")
+	}
+}
+
 // TestRabbitMQSecretIsValueless asserts RABBITMQ_DEFAULT_PASS is emitted as a
 // valueless env key (no plaintext) — the §7.5 secret coupling for broker creds.
 func TestRabbitMQSecretIsValueless(t *testing.T) {

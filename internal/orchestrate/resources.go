@@ -135,7 +135,7 @@ func toResourceConnector(connect PgConnector) resource.PgConnector {
 // daemon/endpoint-free in tests. Postgres + MinIO are live in this milestone.
 func buildRegistry(d UpDeps) *resource.Registry {
 	return resource.NewRegistry(
-		resource.Postgres{Connect: toResourceConnector(d.PgConnect)},
+		resource.Postgres{Connect: toResourceConnector(retryingPgConnect(d.PgConnect))},
 		resource.MinIO{Factory: d.S3Factory},
 		resource.NATS{Factory: d.NatsFactory},
 		resource.Kafka{Factory: d.KafkaFactory},
