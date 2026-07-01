@@ -125,6 +125,17 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 	}
 	projects = activeProjects
 
+	// Shared services to bring up. Normally only the instances the active projects
+	// transitively `uses` (spec 12 selective-up). But a hub / shared-only workspace
+	// — one that declares `shared:` services and has NO projects referencing them
+	// (exactly what `devstack init` scaffolds: warm pg/redis/minio for many repos) —
+	// must still bring up its full declared shared stack, or `up` is a silent no-op
+	// that starts nothing.
+	sharedNames := active.Shared
+	if len(d.Model.Projects) == 0 && len(d.Model.Workspace.Shared) > 0 {
+		sharedNames = sortedSharedNames(d.Model)
+	}
+
 	gen, err := generate.New(d.Model, d.Source, generate.WithEnv(d.Env), generate.WithProfile(d.Profile))
 	if err != nil {
 		return nil, err
@@ -157,7 +168,7 @@ func BuildUp(d UpDeps) ([]Phase, error) {
 		generatePhase(d, gen),
 		secretsPhase(d, projects, secretEnv),
 		trustPhase(d),
-		sharedPhase(d, projects, active.Shared, provInstances),
+		sharedPhase(d, projects, sharedNames, provInstances),
 	)
 	if len(targets) > 0 {
 		phases = append(phases, provisionPhase(d, targets))
@@ -299,10 +310,19 @@ func preflightPhase(d UpDeps) Phase {
 
 // network — idempotent ensure of the pinned external bridge (must precede any
 // compose up). Mutating but never auto-removed (shared by other workspaces).
+//
+// AlwaysRun (not fingerprint-cached): the external network can disappear
+// out-of-band — a `docker network prune`, a Docker Desktop/WSL restart, or
+// another tool removing it — and a constant-fingerprint skip would leave `up`
+// unable to recreate it, failing every compose-up with "network devstack_shared
+// declared as external, but could not be found". EnsureNetwork is a cheap
+// create-if-missing under the lock, so re-running every time is correct and
+// self-healing.
 func networkPhase(d UpDeps) Phase {
 	return Phase{
-		Name:     "network",
-		Mutating: true,
+		Name:      "network",
+		Mutating:  true,
+		AlwaysRun: true,
 		Fingerprint: func(context.Context) (string, error) {
 			return Fingerprint(generate.SharedNetwork), nil
 		},
@@ -603,6 +623,15 @@ func sortedProjects(m *config.Model) []string {
 	for k := range m.Projects {
 		out = append(out, k)
 	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedSharedNames returns the declared shared-service names, sorted — the full
+// shared stack a hub / shared-only workspace brings up when no project selects a
+// subset (see BuildUp).
+func sortedSharedNames(m *config.Model) []string {
+	out := m.SharedNames()
 	sort.Strings(out)
 	return out
 }
