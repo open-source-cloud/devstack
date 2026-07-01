@@ -29,8 +29,13 @@ service:
   volumes:
     - "localstackdata:/var/lib/localstack"
   healthcheck:
-    # /_localstack/health reports per-service readiness; gate on the edge being up.
-    test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q running"]
+    # /_localstack/health reports per-service readiness. On a fresh start the
+    # configured SERVICES are "available" (a service only flips to "running" after
+    # its first request), so gate on ANY service being available|running — the
+    # honest "edge up + providers loaded" signal. Gating on "running" alone
+    # deadlocks: nothing is "running" until traffic arrives, so the container
+    # never goes healthy and the up saga aborts (verified on localstack 3.8.1).
+    test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -Eq 'available|running'"]
     interval: 10s
     timeout: 5s
     retries: 8

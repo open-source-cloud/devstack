@@ -147,6 +147,10 @@ func provisionPhase(d UpDeps, targets []provTarget) Phase {
 			if connect == nil {
 				connect = defaultPgConnect
 			}
+			// Retry a transient connect: the host-port overlay may have just
+			// recreated the engine, so the proxy RSTs the handshake until Postgres
+			// relistens (the "connection reset by peer" race).
+			connect = retryingPgConnect(connect)
 			byInst := map[string][]string{}
 			for _, t := range targets {
 				byInst[t.instance] = append(byInst[t.instance], t.project)
