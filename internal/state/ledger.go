@@ -324,6 +324,19 @@ func (db *DB) OrphanedProvisioned(active map[string]bool) ([]Provisioned, error)
 	return orphans, nil
 }
 
+// RemoveProvisioned drops a single ownership row (project, kind, name) after the
+// underlying resource has been dropped — the single-resource teardown used by
+// `resource rm` and `resource gc` (spec 27). Idempotent (a no-op if absent).
+// `kind` is free-text, so no migration is needed for new kinds. Hold the lock.
+func (db *DB) RemoveProvisioned(project, kind, name string) error {
+	_, err := db.Exec(`DELETE FROM provisioned WHERE ctx=? AND project=? AND kind=? AND name=?`,
+		db.Ctx, project, kind, name)
+	if err != nil {
+		return fmt.Errorf("remove provisioned %s %s/%s: %w", kind, project, name, err)
+	}
+	return nil
+}
+
 // RemoveProvisionedForProject drops a project's ownership rows (after the actual
 // db/role/bucket has been dropped). Hold the lock.
 func (db *DB) RemoveProvisionedForProject(project string) (int, error) {
