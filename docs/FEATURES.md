@@ -77,7 +77,7 @@ Guided `devstack init`: a Bubble Tea v2 TUI (left engine-picker + right live `wo
 **17. Release automation + 0.x conventional-commit versioning · 0.75w thin (+0.75w wizard) — the v0.2.0 gate.** ([spec 25](specs/25-release-automation.md))
 Conventional commits on `main` → `svu next --v0` → tag + goreleaser **in one workflow** using the built-in `GITHUB_TOKEN` (no PAT/App token), gated by an owner-set `RELEASE_ENABLED` repo variable (default off = the kill-switch); a human-cut tag still releases via the same workflow. Fixes the load-bearing **ldflags v-prefix bug** (`{{.Version}}` stamps `0.1.0`, which `x/mod/semver` rejects) that currently makes the shipped spec-14 update-notifier + `self update` treat a released binary as a dev build and never offer updates. Adds a grouped goreleaser changelog, a PR-title conventional-commit lint, and a CI `v0.*` guard (stay 0.x: BREAKING → minor, never 1.0.0). Optional `devstack release` maintainer wizard. *Everything else in this lane ships through this pipeline — build it first.*
 
-### Local-cloud platform lane (post-M8, v0.x beta; specs 26–29)
+### Local-cloud platform lane (post-M8, v0.x beta; specs 26–29) — ✅ SHIPPED (v0.5.0–v0.9.0)
 
 Turns the shared-infra tool into a **local cloud**: cloud-emulation engines + a first-class data-plane resource layer + the verbs to drive it, plus a CLI/README honesty gate that lands first. Strictly additive over M0–M8; stays 0.x. It generalizes provision-on-demand (Postgres-only today) from one engine to a family. **Build order: #21 (reconcile) first → #20 (substrate) → #19a db/s3 in parallel with #18 (engines) → #19b messaging last.**
 
