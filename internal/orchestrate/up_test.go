@@ -218,7 +218,7 @@ func TestBuildUpHappyPath(t *testing.T) {
 	}
 	for _, r := range recs2 {
 		switch r.Phase {
-		case "preflight", "secrets", "trust", "preUp", "postUp": // AlwaysRun phases
+		case "preflight", "network", "secrets", "trust", "preUp", "postUp": // AlwaysRun phases
 			if r.Status != StatusOK {
 				t.Errorf("%s should re-run ok, got %q", r.Phase, r.Status)
 			}
@@ -227,6 +227,133 @@ func TestBuildUpHappyPath(t *testing.T) {
 				t.Errorf("%s should skip on re-run, got %q", r.Phase, r.Status)
 			}
 		}
+	}
+}
+
+// hubFixture builds a shared-only (hub) workspace: declared shared services and
+// NO projects — exactly what `devstack init` scaffolds. The mock client has a
+// running+healthy container per shared service so the health gate passes.
+func hubFixture(t *testing.T) (UpDeps, *fakeRunner, *state.DB) {
+	t.Helper()
+	root := t.TempDir()
+	ws := "apiVersion: devstack/v1\nkind: Workspace\nname: hub\n" +
+		"shared:\n  minio: { template: minio }\n" +
+		"  postgres: { template: postgres, params: { version: \"16\" } }\n" +
+		"  redis: { template: redis }\n"
+	if err := os.WriteFile(filepath.Join(root, "workspace.yaml"), []byte(ws), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := config.LoadAt(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	db, err := state.Open(context.Background(), filepath.Join(root, "state"), "ctx")
+	if err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	ctr := func(id, name, shared string) docker.Container {
+		return docker.Container{ID: id, Name: name, State: "running",
+			Labels: map[string]string{generate.LabelManaged: "true", generate.LabelShared: shared}}
+	}
+	mc := &docker.MockClient{
+		Containers: []docker.Container{
+			ctr("mn1", "devstack-shared-minio-1", "minio"),
+			ctr("pg1", "devstack-shared-postgres-1", "postgres"),
+			ctr("rd1", "devstack-shared-redis-1", "redis"),
+		},
+		Details: map[string]docker.ContainerDetails{
+			"mn1": {ID: "mn1", State: "running", Running: true, Health: docker.HealthHealthy},
+			"pg1": {ID: "pg1", State: "running", Running: true, Health: docker.HealthHealthy},
+			"rd1": {ID: "rd1", State: "running", Running: true, Health: docker.HealthHealthy},
+		},
+	}
+	src := template.NewFSSource(templates.FS)
+	lockPath := filepath.Join(root, "lock")
+	mgr := &workspace.Manager{Model: m, DB: db, Docker: mc, Source: src, LockPath: lockPath}
+	fr := &fakeRunner{}
+	d := UpDeps{
+		Model: m, DB: db, Docker: mc, Manager: mgr, Source: src,
+		LockPath: lockPath, Runner: fr, Env: map[string]string{}, PgConnect: okPgConnect,
+	}
+	return d, fr, db
+}
+
+// A hub / shared-only workspace (no projects) must bring up its full declared
+// shared stack — otherwise `up` is a silent no-op that starts nothing. This is
+// the live regression: `devstack init` scaffolds shared pg/redis/minio with no
+// projects, and selective-up derived the shared set only from projects' `uses`.
+func TestBuildUpHubWorkspaceBringsUpAllShared(t *testing.T) {
+	d, fr, db := hubFixture(t)
+	phases, err := BuildUp(d)
+	if err != nil {
+		t.Fatalf("BuildUp: %v", err)
+	}
+	// No project ⇒ no compose-up phases, but the shared phase must be present.
+	sawShared := false
+	for _, p := range phases {
+		if p.Name == "compose-up" {
+			t.Errorf("unexpected compose-up phase in a project-less workspace")
+		}
+		if p.Name == "shared" {
+			sawShared = true
+		}
+	}
+	if !sawShared {
+		t.Fatal("no shared phase built for a hub workspace")
+	}
+	saga := &Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}
+	recs, err := saga.Run(context.Background(), phases)
+	if err != nil {
+		t.Fatalf("saga: %v\n%+v", err, recs)
+	}
+	if AnyFailed(recs) {
+		t.Fatalf("a phase failed: %+v", recs)
+	}
+	// The shared stack was up'd with ALL three declared services.
+	svcs := fr.upServices(generate.SharedStackName)
+	for _, want := range []string{"minio", "postgres", "redis"} {
+		if !slices.Contains(svcs, want) {
+			t.Errorf("shared up did not include %q (got %v)", want, svcs)
+		}
+	}
+	// The shared network was ensured.
+	if ok, _ := d.Docker.(*docker.MockClient).NetworkExists(context.Background(), generate.SharedNetwork); !ok {
+		t.Error("shared network was not ensured")
+	}
+}
+
+// The network phase is AlwaysRun: if the external network vanishes out-of-band
+// (a `docker network prune`, a Docker Desktop / WSL restart), a later `up` must
+// re-create it rather than skip on a stale fingerprint and fail every compose-up
+// with "network devstack_shared declared as external, but could not be found".
+func TestNetworkPhaseSelfHeals(t *testing.T) {
+	d, _, db := hubFixture(t)
+	mc := d.Docker.(*docker.MockClient)
+	phases, err := BuildUp(d)
+	if err != nil {
+		t.Fatalf("BuildUp: %v", err)
+	}
+	saga := &Saga{Workspace: d.Model.Workspace.Name, DB: db, LockPath: d.LockPath}
+	if _, err := saga.Run(context.Background(), phases); err != nil {
+		t.Fatalf("first up: %v", err)
+	}
+	if ok, _ := mc.NetworkExists(context.Background(), generate.SharedNetwork); !ok {
+		t.Fatal("network not ensured on first up")
+	}
+	// Simulate out-of-band removal, then re-run: the network must come back.
+	delete(mc.Networks, generate.SharedNetwork)
+	recs, err := saga.Run(context.Background(), phases)
+	if err != nil {
+		t.Fatalf("second up: %v", err)
+	}
+	for _, r := range recs {
+		if r.Phase == "network" && r.Status != StatusOK {
+			t.Errorf("network re-run status = %q, want ok (AlwaysRun self-heal)", r.Status)
+		}
+	}
+	if ok, _ := mc.NetworkExists(context.Background(), generate.SharedNetwork); !ok {
+		t.Error("network was not re-ensured after out-of-band removal")
 	}
 }
 
