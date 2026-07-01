@@ -79,6 +79,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 	root.AddCommand(
 		newUpCmd(g),
 		newDownCmd(g),
+		newShellCmd(g),
 		newStatusCmd(g),
 		newDnsCmd(g),
 		newTrustCmd(g),

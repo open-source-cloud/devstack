@@ -38,6 +38,31 @@ func (ExecRunner) Run(ctx context.Context, env []string, dir, name string, args 
 	return nil
 }
 
+// InteractiveRunner runs a command with ALL THREE std streams inherited and NO
+// capture, for an interactive `compose exec` (a login shell into a container).
+// Unlike ExecRunner it wires Stdin=os.Stdin (so the shell receives input) and
+// does not tee stderr into a buffer (the child owns the terminal). The child's
+// exit code is propagated verbatim via the returned *exec.ExitError, so callers
+// can mirror it as the process exit code (spec 26 `shell`).
+type InteractiveRunner struct{}
+
+func (InteractiveRunner) Run(ctx context.Context, env []string, dir, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	// Return the raw error (an *exec.ExitError carries the child exit code) so the
+	// caller can propagate it — do NOT wrap it in CmdError (no captured stderr).
+	return cmd.Run()
+}
+
+// Output is not meaningful for an interactive runner (the child owns stdout).
+func (InteractiveRunner) Output(context.Context, []string, string, string, ...string) ([]byte, error) {
+	return nil, fmt.Errorf("InteractiveRunner does not support captured Output")
+}
+
 func (ExecRunner) Output(ctx context.Context, env []string, dir, name string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
@@ -125,6 +150,26 @@ func (c *Compose) Down(ctx context.Context, volumes bool) error {
 func (c *Compose) Stop(ctx context.Context, services ...string) error {
 	args := append(c.base(), "stop")
 	args = append(args, services...)
+	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
+}
+
+// Exec runs `docker compose exec` for a service, letting compose resolve the
+// container from the project + service (no manual SDK enumeration). When
+// interactive it requests a real TTY (-it) and the caller MUST supply an
+// InteractiveRunner (stdin-wired, non-capturing) so the shell doesn't hang;
+// otherwise it passes -T (no TTY allocation) so a non-interactive caller never
+// blocks on a missing terminal. cmd is the command + args to run in the container
+// (empty → the image default). Returns the child's error verbatim (an
+// *exec.ExitError carries its exit code) so `shell` can mirror it (spec 26).
+func (c *Compose) Exec(ctx context.Context, service string, interactive bool, cmd ...string) error {
+	args := append(c.base(), "exec")
+	if interactive {
+		args = append(args, "-it")
+	} else {
+		args = append(args, "-T")
+	}
+	args = append(args, service)
+	args = append(args, cmd...)
 	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
 }
 

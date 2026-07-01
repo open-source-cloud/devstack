@@ -14,6 +14,7 @@ type migration struct {
 var migrations = []migration{
 	{version: 1, stmt: schemaV1},
 	{version: 2, stmt: schemaV2},
+	{version: 3, stmt: schemaV3},
 }
 
 // schemaV1 is the initial ledger (spec 08 §Tables). Every mutable row is scoped
@@ -110,6 +111,25 @@ CREATE TABLE IF NOT EXISTS saga_phase (
     satisfied_at TEXT,
     error        TEXT,
     PRIMARY KEY (ctx, workspace, scope, phase),
+    FOREIGN KEY (ctx) REFERENCES docker_context(name) ON DELETE CASCADE
+);
+`
+
+// schemaV3 (spec 26) adds the thin machine-wide workspace registry: a pointer
+// table mapping each known workspace root to its name, written on `up` so
+// `workspace list` can enumerate every workspace for the current Docker context.
+// It is a POINTER only — projects/refs are re-derived from the committed
+// workspace.yaml at list time, never denormalized here. Keyed by (ctx, root) so
+// WSL2's Desktop-vs-dockerd rows never collide, and CASCADE-deleted with its
+// docker_context like every other ledger table.
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS workspace (
+    ctx        TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    root       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_up_at TEXT,
+    PRIMARY KEY (ctx, root),
     FOREIGN KEY (ctx) REFERENCES docker_context(name) ON DELETE CASCADE
 );
 `

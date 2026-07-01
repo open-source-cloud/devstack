@@ -26,11 +26,24 @@ func stub(use, short, milestone string, children ...*cobra.Command) *cobra.Comma
 
 func rootName(c *cobra.Command) string { return c.Root().Name() }
 
-// addStubCommands wires the remaining command surface from spec 07. doctor,
-// alias and version are real; everything else is a milestone-tagged placeholder.
+// addStubCommands reserves the post-1.0 command surface from spec 07 as
+// milestone-tagged placeholders so `--help`/completions stay consistent (exit 0,
+// clear notice). `shell` has GRADUATED to a real command (spec 26); `logs` stays a
+// stub, re-tagged to v2 (its full read-only-SDK design is owned by spec 16).
 func addStubCommands(root *cobra.Command, _ *GlobalOpts) {
 	root.AddCommand(
-		stub("shell", "Open a shell in a service container", "M2"),
-		stub("logs", "Stream service logs", "M2"),
+		stub("logs", "Stream service logs", "v2 (spec 16)"),
+		stub("dashboard", "Live TUI cockpit", "v2 (spec 16)"),
+		stub("ide", "Generate devcontainer/.code-workspace/launch configs", "v2 (spec 17)"),
+		stub("telemetry", "Opt-in usage telemetry (default OFF)", "a later release (spec 20)"),
+		// db: parent hosting `gc` (v1, spec 13) + snapshot|restore|reset|list|pull (v2, spec 15).
+		stub("db", "Database snapshot/restore/reset lifecycle", "v2 (spec 15)",
+			stub("gc", "Reclaim orphaned provisioned databases/roles/buckets", "v1 (spec 13)"),
+			stub("snapshot", "Snapshot a project's database", "v2 (spec 15)"),
+			stub("restore", "Restore a project's database from a snapshot", "v2 (spec 15)"),
+			stub("reset", "Drop and re-provision a project's database", "v2 (spec 15)"),
+			stub("list", "List available database snapshots", "v2 (spec 15)"),
+			stub("pull", "Pull a database snapshot from a shared store", "v2 (spec 15)"),
+		),
 	)
 }

@@ -53,6 +53,7 @@ func newSelfUpdateCmd(g *GlobalOpts) *cobra.Command {
 	var (
 		check bool
 		pin   string
+		force bool
 	)
 	cmd := &cobra.Command{
 		Use:   "update",
@@ -65,7 +66,7 @@ func newSelfUpdateCmd(g *GlobalOpts) *cobra.Command {
 			if check {
 				return newSelfCheckCmd(g).RunE(cmd, nil)
 			}
-			res, err := selfupdate.Update(cmd.Context(), version.Version, selfupdate.Options{Version: pin})
+			res, err := selfupdate.Update(cmd.Context(), version.Version, selfupdate.Options{Version: pin, Force: force})
 			if err != nil {
 				return err
 			}
@@ -96,5 +97,6 @@ func newSelfUpdateCmd(g *GlobalOpts) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "only check for a newer version; do not install")
 	cmd.Flags().StringVar(&pin, "version", "", "install a specific release tag (e.g. v0.2.0)")
+	cmd.Flags().BoolVar(&force, "force", false, "re-install even when already up to date (still refuses package-managed installs)")
 	return cmd
 }

@@ -78,13 +78,13 @@ func TestSagaPhasesForAndClear(t *testing.T) {
 	}
 }
 
-func TestSchemaVersionIsTwo(t *testing.T) {
+func TestSchemaVersionIsCurrent(t *testing.T) {
 	db := openTestDB(t)
 	v, err := db.SchemaVersion()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 2 {
-		t.Errorf("schema version = %d, want 2 (saga_phase migration applied)", v)
+	if v != len(migrations) {
+		t.Errorf("schema version = %d, want %d (all migrations applied)", v, len(migrations))
 	}
 }

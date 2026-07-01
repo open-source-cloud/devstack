@@ -24,7 +24,7 @@ func newWorkspaceCmd(g *GlobalOpts) *cobra.Command {
 		Use:   "workspace",
 		Short: "Workspace-level lifecycle (teardown)",
 	}
-	cmd.AddCommand(newWorkspaceDestroyCmd(g))
+	cmd.AddCommand(newWorkspaceDestroyCmd(g), newWorkspaceListCmd(g))
 	return cmd
 }
 
