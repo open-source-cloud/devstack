@@ -9,7 +9,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - curl -sf http://localhost:4566/_localstack/health | grep -q running
+        - curl -sf http://localhost:4566/_localstack/health | grep -Eq 'available|running'
       timeout: 5s
       interval: 10s
       retries: 8
