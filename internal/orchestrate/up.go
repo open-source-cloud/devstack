@@ -64,6 +64,14 @@ type UpDeps struct {
 	// nil → the real pure-Go aws-sdk-go-v2 path-style client. Injected for tests so
 	// bucket ops run without a live endpoint.
 	S3Factory resource.S3Factory
+	// NatsFactory / KafkaFactory / SQSFactory / SNSFactory build the admin clients
+	// for the messaging provisioners (spec 29); nil → the real pure-Go clients
+	// (nats.go / franz-go / aws-sdk-go-v2). Injected for tests so queue/topic/stream
+	// ops run without a live broker/endpoint.
+	NatsFactory  resource.NatsFactory
+	KafkaFactory resource.KafkaFactory
+	SQSFactory   resource.SQSFactory
+	SNSFactory   resource.SNSFactory
 
 	Build         bool          // compose up --build (honors the generate ledger's selective-rebuild hash)
 	Rebuild       bool          // force `compose build --no-cache` before up (spec 26 --rebuild)
