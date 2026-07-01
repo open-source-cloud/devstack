@@ -1,0 +1,27 @@
+schemaVersion: 1
+description: "Shared NATS engine with JetStream, reached over the shared network at shared-nats:4222."
+provides: nats
+exports: [host, port, monitorPort]
+defaultPort: 4222
+params:
+  version:
+    type: string
+    default: "2"
+    description: "NATS major version image tag (the (engine,major) key)."
+
+service:
+  image: "nats:[[ .params.version ]]"
+  restart: unless-stopped
+  # -js enables JetStream (streams/queues/KV); -m 8222 enables the monitoring port.
+  command: ["-js", "-sd", "/data", "-m", "8222"]
+  volumes:
+    - "natsdata:/data"
+  healthcheck:
+    # The nats image ships no curl; use the bundled wget against the /healthz monitor route.
+    test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+volumes:
+  natsdata: {}

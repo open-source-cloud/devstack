@@ -1,0 +1,35 @@
+schemaVersion: 1
+description: "Shared Kafka-compatible broker (Redpanda), reached over the shared network at shared-kafka:9092."
+provides: kafka
+exports: [host, port, adminPort]
+defaultPort: 9092
+params:
+  image:
+    type: string
+    default: "redpandadata/redpanda:v24.2"
+    description: "Single-binary Kafka-API broker; pin a MAJOR-stable tag for (engine,major) ledger keying."
+
+service:
+  image: "[[ .params.image ]]"
+  restart: unless-stopped
+  command:
+    - "redpanda"
+    - "start"
+    - "--mode=dev-container"
+    - "--smp=1"
+    - "--default-log-level=warn"
+    # TWO advertised listeners: in-network clients use the DNS alias; host tools
+    # use 127.0.0.1. A single advertised listener is the #1 Kafka-local footgun.
+    - "--kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092"
+    - "--advertise-kafka-addr=internal://shared-kafka:9092,external://127.0.0.1:49092"
+  volumes:
+    - "kafkadata:/var/lib/redpanda/data"
+  healthcheck:
+    test: ["CMD-SHELL", "rpk cluster health -x admin.hosts=localhost:9644 | grep -q 'Healthy:.*true'"]
+    interval: 10s
+    timeout: 5s
+    retries: 8
+    start_period: 15s
+
+volumes:
+  kafkadata: {}

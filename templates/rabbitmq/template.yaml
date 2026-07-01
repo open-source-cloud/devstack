@@ -1,0 +1,33 @@
+schemaVersion: 1
+description: "Shared RabbitMQ (AMQP) engine with the management UI, reached at shared-rabbitmq:5672."
+provides: amqp
+exports: [host, port, mgmtPort]
+defaultPort: 5672
+params:
+  version:
+    type: string
+    default: "3"
+    description: "RabbitMQ major (the (engine,major) key); the -management tag adds the UI."
+  user:
+    type: string
+    default: devstack
+    description: "Default AMQP user; the password is secret and injected via env.import."
+
+service:
+  image: "rabbitmq:[[ .params.version ]]-management"
+  restart: unless-stopped
+  environment:
+    RABBITMQ_DEFAULT_USER: "[[ .params.user ]]"
+    # Password is secret -> emitted as a valueless env key, filled at compose-up.
+    RABBITMQ_DEFAULT_PASS:
+  volumes:
+    - "rabbitmqdata:/var/lib/rabbitmq"
+  healthcheck:
+    test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+    interval: 15s
+    timeout: 10s
+    retries: 5
+    start_period: 30s
+
+volumes:
+  rabbitmqdata: {}
