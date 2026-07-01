@@ -1,0 +1,39 @@
+schemaVersion: 1
+description: "Shared ministack AWS-emulation engine (LocalStack-compatible), reached over the shared network at shared-ministack:4566."
+provides: aws
+exports: [host, port, endpoint, region]
+defaultPort: 4566
+params:
+  image:
+    type: string
+    default: "ministackorg/ministack:latest"
+    description: "ministack image; pin a tag (e.g. ministackorg/ministack:1) for stable (engine,major) ledger keying — latest floats across majors."
+  services:
+    type: string
+    default: "s3,sqs,sns"
+    description: "Comma list for the SERVICES env (selects which AWS services start — a light default for fast startup; empty/all enables everything)."
+  region:
+    type: string
+    default: "us-east-1"
+    description: "Default AWS region advertised to in-network consumers (the region export)."
+
+service:
+  image: "[[ .params.image ]]"
+  restart: unless-stopped
+  environment:
+    SERVICES: "[[ .params.services ]]"
+    AWS_DEFAULT_REGION: "[[ .params.region ]]"
+    PERSIST_STATE: "1"
+    STATE_DIR: "/var/lib/ministack"
+  volumes:
+    - "ministackdata:/var/lib/ministack"
+  healthcheck:
+    # /_ministack/ready returns 200 when the edge is serving (503 while starting).
+    test: ["CMD-SHELL", "curl -sf http://localhost:4566/_ministack/ready"]
+    interval: 10s
+    timeout: 5s
+    retries: 8
+    start_period: 20s
+
+volumes:
+  ministackdata: {}
