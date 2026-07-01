@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/open-source-cloud/devstack/internal/db"
+	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/generate"
 	"github.com/open-source-cloud/devstack/internal/lock"
 	"github.com/open-source-cloud/devstack/internal/store"
@@ -37,14 +38,16 @@ const snapshotKind = "snapshot"
 
 // SnapshotOptions selects the tenant to capture.
 type SnapshotOptions struct {
+	Kind     string // engine: pg|redis|minio (default: pg)
 	Project  string // owner project (default: the workspace's single/first project)
-	Database string // physical tenant db (default: the project's own <project> db)
-	Instance string // shared Postgres instance (default: the first postgres instance)
+	Database string // physical tenant namespace (pg db / redis index / minio bucket; default: derived)
+	Instance string // shared instance (default: the first instance of the engine)
 	Name     string // human label (default: a timestamp label)
 }
 
 // RestoreOptions selects the tenant + snapshot to replay.
 type RestoreOptions struct {
+	Kind     string // engine: pg|redis|minio (default: pg)
 	Project  string
 	Database string
 	Instance string
@@ -70,9 +73,58 @@ type SnapshotMeta struct {
 // (hyphens → underscores), matching provision.EnsureProject's naming.
 func pgTenantDB(project string) string { return strings.ReplaceAll(project, "-", "_") }
 
-// resolveTenant fills in the (project, database, instance) defaults and validates
-// that a shared Postgres instance exists.
-func resolveTenant(d UpDeps, project, database, instance string) (proj, dbName, inst string, err error) {
+// engineForKind maps the user-facing snapshot kind to the shared-template engine
+// name and the stored metadata label. pg/postgres → postgres/pg; redis → redis;
+// minio/s3 → minio. The label is what lands in SnapshotMeta.Kind + the dump file
+// extension.
+func engineForKind(kind string) (engine, label string, err error) {
+	switch kind {
+	case "", "pg", "postgres":
+		return "postgres", "pg", nil
+	case "redis":
+		return "redis", "redis", nil
+	case "minio", "s3":
+		return "minio", "minio", nil
+	default:
+		return "", "", fmt.Errorf("unsupported snapshot kind %q (want pg|redis|minio)", kind)
+	}
+}
+
+// defaultTenant derives the default per-project namespace for an engine: the
+// postgres tenant db, the minio tenant bucket (the project name), or the redis
+// logical index (empty → whole instance, the best-effort default).
+func defaultTenant(engine, project string) string {
+	switch engine {
+	case "postgres":
+		return pgTenantDB(project)
+	case "minio":
+		return project
+	default: // redis: no index by default (whole-instance best-effort)
+		return ""
+	}
+}
+
+// dumpExt is the on-disk extension for a snapshot label (pg → .dump, redis → .rdb,
+// minio → .tar). The extension is recorded in the sidecar so restore finds the file.
+func dumpExt(label string) string {
+	switch label {
+	case "redis":
+		return ".rdb"
+	case "minio":
+		return ".tar"
+	default:
+		return ".dump"
+	}
+}
+
+// resolveTenant fills in the (project, database, instance) defaults for the
+// requested engine kind and validates that a matching shared instance exists.
+// Returns the shared-template engine + the metadata label alongside the tenant.
+func resolveTenant(d UpDeps, kind, project, database, instance string) (proj, dbName, inst, engine, label string, err error) {
+	engine, label, err = engineForKind(kind)
+	if err != nil {
+		return "", "", "", "", "", err
+	}
 	proj = project
 	if proj == "" {
 		if names := sortedProjects(d.Model); len(names) > 0 {
@@ -80,50 +132,80 @@ func resolveTenant(d UpDeps, project, database, instance string) (proj, dbName, 
 		}
 	}
 	if proj == "" {
-		return "", "", "", fmt.Errorf("no project in this workspace to snapshot")
+		return "", "", "", "", "", fmt.Errorf("no project in this workspace to snapshot")
 	}
 	if _, ok := d.Model.Projects[proj]; !ok {
-		return "", "", "", fmt.Errorf("project %q is not in this workspace", proj)
+		return "", "", "", "", "", fmt.Errorf("project %q is not in this workspace", proj)
 	}
 	inst = instance
 	if inst == "" {
 		var ok bool
-		inst, ok = ResolveInstance(d.Model, "postgres")
+		inst, ok = ResolveInstance(d.Model, engine)
 		if !ok {
-			return "", "", "", fmt.Errorf("no shared postgres instance in this workspace (declare one under workspace.shared)")
+			return "", "", "", "", "", fmt.Errorf("no shared %s instance in this workspace (declare one under workspace.shared)", engine)
 		}
-	} else if d.Model.Workspace.Shared[inst].Template != "postgres" {
-		return "", "", "", fmt.Errorf("shared instance %q is not a postgres engine", inst)
+	} else if d.Model.Workspace.Shared[inst].Template != engine {
+		return "", "", "", "", "", fmt.Errorf("shared instance %q is not a %s engine", inst, engine)
 	}
 	dbName = database
 	if dbName == "" {
-		dbName = pgTenantDB(proj)
+		dbName = defaultTenant(engine, proj)
 	}
-	return proj, dbName, inst, nil
+	return proj, dbName, inst, engine, label, nil
 }
 
 // tenantConn resolves the host-reachable admin endpoint for the tenant, reusing
 // the provision overlay (allocates/looks up the ledger port, applies the loopback
-// overlay via compose up). Returns the ConnInfo the dumper connects with.
-func tenantConn(ctx context.Context, d UpDeps, inst, dbName string) (db.ConnInfo, error) {
-	target, err := engineTarget(ctx, d, "postgres", inst)
+// overlay via compose up). Returns the ConnInfo the engine's dumper connects with.
+// Redis creds come from the instance params (auth-less by default → empty
+// password, so no AUTH is sent); pg/minio use the resolved admin creds.
+func tenantConn(ctx context.Context, d UpDeps, engine, inst, dbName string) (db.ConnInfo, error) {
+	target, err := engineTarget(ctx, d, engine, inst)
 	if err != nil {
 		return db.ConnInfo{}, err
 	}
-	return db.ConnInfo{
-		Host:     target.Host,
-		Port:     target.Port,
-		User:     target.AdminEnv["user"],
-		Password: target.AdminEnv["password"],
-		Database: dbName,
-	}, nil
+	conn := db.ConnInfo{Host: target.Host, Port: target.Port, Database: dbName}
+	switch engine {
+	case "redis":
+		conn.User = ""
+		conn.Password = paramString(d.Model.Workspace.Shared[inst].Params, "rootPassword", "")
+	default:
+		conn.User = target.AdminEnv["user"]
+		conn.Password = target.AdminEnv["password"]
+	}
+	return conn, nil
+}
+
+// SelectDumper picks the engine dumper for a snapshot kind, wired with the real
+// external-tool runner (pg/redis) or the pure-Go S3 client (minio). The CLI calls
+// this so `db snapshot`/`db restore` reach the right tool by target engine; tests
+// inject a dumper directly. redis-cli/pg client absence surfaces via Preflight.
+func SelectDumper(d UpDeps, kind string) (db.Dumper, error) {
+	engine, _, err := engineForKind(kind)
+	if err != nil {
+		return nil, err
+	}
+	runner := d.Runner
+	if runner == nil {
+		runner = docker.ExecRunner{}
+	}
+	switch engine {
+	case "postgres":
+		return db.PgDumper{Runner: runner}, nil
+	case "redis":
+		return db.RedisDumper{Runner: runner}, nil
+	case "minio":
+		return db.MinioDumper{}, nil
+	default:
+		return nil, fmt.Errorf("no dumper for engine %q", engine)
+	}
 }
 
 // Snapshot captures the project's tenant database to the workspace snapshot store
 // and records a ledger row. The dump streams OUTSIDE the flock; only the ledger
 // write is locked (spec 15).
 func Snapshot(ctx context.Context, d UpDeps, dumper db.Dumper, opt SnapshotOptions) (SnapshotMeta, error) {
-	proj, dbName, inst, err := resolveTenant(d, opt.Project, opt.Database, opt.Instance)
+	proj, dbName, inst, engine, label, err := resolveTenant(d, opt.Kind, opt.Project, opt.Database, opt.Instance)
 	if err != nil {
 		return SnapshotMeta{}, err
 	}
@@ -135,7 +217,7 @@ func Snapshot(ctx context.Context, d UpDeps, dumper db.Dumper, opt SnapshotOptio
 		return SnapshotMeta{}, err
 	}
 
-	conn, err := tenantConn(ctx, d, inst, dbName)
+	conn, err := tenantConn(ctx, d, engine, inst, dbName)
 	if err != nil {
 		return SnapshotMeta{}, err
 	}
@@ -144,7 +226,7 @@ func Snapshot(ctx context.Context, d UpDeps, dumper db.Dumper, opt SnapshotOptio
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return SnapshotMeta{}, fmt.Errorf("create snapshot store: %w", err)
 	}
-	dumpPath := filepath.Join(dir, name+".dump")
+	dumpPath := filepath.Join(dir, name+dumpExt(label))
 
 	// The dump PROCESS runs outside the flock (spec 15 — long-running).
 	if err := dumper.Snapshot(ctx, conn, dumpPath); err != nil {
@@ -156,7 +238,7 @@ func Snapshot(ctx context.Context, d UpDeps, dumper db.Dumper, opt SnapshotOptio
 		return SnapshotMeta{}, err
 	}
 	meta := SnapshotMeta{
-		Name: name, Project: proj, Kind: "pg", Instance: inst, Database: dbName,
+		Name: name, Project: proj, Kind: label, Instance: inst, Database: dbName,
 		Digest: digest, Size: size, CreatedAt: time.Now().UTC().Format(time.RFC3339), Path: dumpPath,
 	}
 	if err := writeSidecar(dir, meta); err != nil {
@@ -183,7 +265,7 @@ func Restore(ctx context.Context, d UpDeps, dumper db.Dumper, opt RestoreOptions
 	if opt.Name == "" {
 		return SnapshotMeta{}, fmt.Errorf("a snapshot name is required")
 	}
-	proj, dbName, inst, err := resolveTenant(d, opt.Project, opt.Database, opt.Instance)
+	proj, dbName, inst, engine, _, err := resolveTenant(d, opt.Kind, opt.Project, opt.Database, opt.Instance)
 	if err != nil {
 		return SnapshotMeta{}, err
 	}
@@ -204,7 +286,7 @@ func Restore(ctx context.Context, d UpDeps, dumper db.Dumper, opt RestoreOptions
 		return SnapshotMeta{}, fmt.Errorf("snapshot %q is corrupted: digest %s does not match recorded %s", opt.Name, digest, meta.Digest)
 	}
 
-	conn, err := tenantConn(ctx, d, inst, dbName)
+	conn, err := tenantConn(ctx, d, engine, inst, dbName)
 	if err != nil {
 		return SnapshotMeta{}, err
 	}

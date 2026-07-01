@@ -6,8 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/open-source-cloud/devstack/internal/db"
-	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/orchestrate"
 	"github.com/open-source-cloud/devstack/internal/resource"
 	"github.com/open-source-cloud/devstack/internal/state"
@@ -41,18 +39,15 @@ func newDbCmd(g *GlobalOpts) *cobra.Command {
 	return cmd
 }
 
-// defaultPgDumper is the real pg_dump/pg_restore/psql client, shelled behind the
-// docker exec runner (the release binary stays CGO-free — the tools are external).
-func defaultPgDumper() db.Dumper { return db.PgDumper{Runner: docker.ExecRunner{}} }
-
 // newDbSnapshotCmd wires `db snapshot [name]` (capture) with the `ls` subcommand
-// (list). A snapshot dumps ONLY the project's tenant database on the shared
-// Postgres to ~/.devstack/snapshots/<workspace>/ and records a ledger row (spec 15).
+// (list). A snapshot dumps ONLY the project's tenant namespace on the shared engine
+// selected by --kind (pg|redis|minio) to ~/.devstack/snapshots/<workspace>/ and
+// records a ledger row (spec 15).
 func newDbSnapshotCmd(g *GlobalOpts) *cobra.Command {
-	var project, database, instance string
+	var project, database, instance, kind string
 	cmd := &cobra.Command{
 		Use:   "snapshot [name]",
-		Short: "Capture a project's tenant database to the snapshot store",
+		Short: "Capture a project's tenant namespace (pg|redis|minio) to the snapshot store",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, closeFn, err := buildUpDeps(cmd)
@@ -60,7 +55,10 @@ func newDbSnapshotCmd(g *GlobalOpts) *cobra.Command {
 				return err
 			}
 			defer closeFn()
-			dumper := defaultPgDumper()
+			dumper, err := orchestrate.SelectDumper(d, kind)
+			if err != nil {
+				return err
+			}
 			if err := dumper.Preflight(cmd.Context()); err != nil {
 				return err
 			}
@@ -69,7 +67,7 @@ func newDbSnapshotCmd(g *GlobalOpts) *cobra.Command {
 				name = args[0]
 			}
 			meta, err := orchestrate.Snapshot(cmd.Context(), d, dumper, orchestrate.SnapshotOptions{
-				Project: project, Database: database, Instance: instance, Name: name,
+				Kind: kind, Project: project, Database: database, Instance: instance, Name: name,
 			})
 			if err != nil {
 				return err
@@ -78,14 +76,15 @@ func newDbSnapshotCmd(g *GlobalOpts) *cobra.Command {
 				return writeJSON(cmd, meta)
 			}
 			if !g.Quiet {
-				fmt.Fprintf(cmd.OutOrStdout(), "captured snapshot %q of %s (%d bytes)\n%s\n", meta.Name, meta.Database, meta.Size, meta.Path)
+				fmt.Fprintf(cmd.OutOrStdout(), "captured %s snapshot %q of %s (%d bytes)\n%s\n", meta.Kind, meta.Name, meta.Database, meta.Size, meta.Path)
 			}
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&kind, "kind", "pg", "engine: pg|redis|minio")
 	cmd.Flags().StringVar(&project, "project", "", "owner project (default: the workspace's single/first project)")
-	cmd.Flags().StringVar(&database, "db", "", "physical tenant database (default: the project's own database)")
-	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
+	cmd.Flags().StringVar(&database, "db", "", "tenant namespace: pg db / redis index / minio bucket (default: derived)")
+	cmd.Flags().StringVar(&instance, "instance", "", "shared instance (default: the first instance of the engine)")
 	cmd.AddCommand(newDbSnapshotLsCmd(g))
 	return cmd
 }
@@ -125,11 +124,11 @@ func newDbSnapshotLsCmd(g *GlobalOpts) *cobra.Command {
 }
 
 func newDbRestoreCmd(g *GlobalOpts) *cobra.Command {
-	var project, database, instance string
+	var project, database, instance, kind string
 	var force, yes bool
 	cmd := &cobra.Command{
 		Use:   "restore <name>",
-		Short: "Restore a project's tenant database from a snapshot (destructive)",
+		Short: "Restore a project's tenant namespace (pg|redis|minio) from a snapshot (destructive)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if g.JSON && !yes {
@@ -140,18 +139,21 @@ func newDbRestoreCmd(g *GlobalOpts) *cobra.Command {
 				return err
 			}
 			defer closeFn()
-			dumper := defaultPgDumper()
+			dumper, err := orchestrate.SelectDumper(d, kind)
+			if err != nil {
+				return err
+			}
 			if err := dumper.Preflight(cmd.Context()); err != nil {
 				return err
 			}
 			if !yes {
-				if !confirm(cmd, fmt.Sprintf("This REPLACES the tenant database from snapshot %q (current data destroyed). Type 'yes' to continue: ", args[0])) {
+				if !confirm(cmd, fmt.Sprintf("This REPLACES the tenant namespace from snapshot %q (current data destroyed). Type 'yes' to continue: ", args[0])) {
 					fmt.Fprintln(cmd.OutOrStdout(), "aborted")
 					return nil
 				}
 			}
 			meta, err := orchestrate.Restore(cmd.Context(), d, dumper, orchestrate.RestoreOptions{
-				Project: project, Database: database, Instance: instance, Name: args[0], Force: force,
+				Kind: kind, Project: project, Database: database, Instance: instance, Name: args[0], Force: force,
 			})
 			if err != nil {
 				return err
@@ -165,10 +167,11 @@ func newDbRestoreCmd(g *GlobalOpts) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().StringVar(&kind, "kind", "pg", "engine: pg|redis|minio")
 	cmd.Flags().StringVar(&project, "project", "", "owner project (default: the workspace's single/first project)")
-	cmd.Flags().StringVar(&database, "db", "", "physical tenant database (default: the project's own database)")
-	cmd.Flags().StringVar(&instance, "instance", "", "shared postgres instance (default: the first postgres instance)")
-	cmd.Flags().BoolVar(&force, "force", false, "replay over a non-empty database (overwrite existing data)")
+	cmd.Flags().StringVar(&database, "db", "", "tenant namespace: pg db / redis index / minio bucket (default: derived)")
+	cmd.Flags().StringVar(&instance, "instance", "", "shared instance (default: the first instance of the engine)")
+	cmd.Flags().BoolVar(&force, "force", false, "replay over a non-empty namespace (overwrite existing data)")
 	cmd.Flags().BoolVar(&yes, "yes", false, "skip the confirmation prompt (required for --json)")
 	return cmd
 }
