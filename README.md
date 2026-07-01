@@ -160,16 +160,19 @@ devstack secrets ingest .env    # convert a committed .env into secret:// refs +
 | `secrets keygen/ingest/login/logout/status` | ✅ | SOPS+age / AWS / Infisical secrets; `ingest` converts a `.env` into `secret://` refs + vars. |
 | `trust install/uninstall/status` | ✅ | Local-HTTPS CA via `mkcert`. |
 | `dns setup/status/remove` | ✅ | `*.localhost` resolver wiring. |
-| `tunnel login/create/route` | ✅ | Cloudflare tunnel (default down; refuses secret-bearing services). |
+| `tunnel login/create/route/up/down` | ✅ | Cloudflare tunnel (default down; refuses secret-bearing services). |
 | `self check/update` | ✅ | Version check and checksum-verified self-update. |
 | `store init/path/show` | ✅ | The global `~/.devstack` store: config + custom templates + shared defs. |
 | `alias add/remove/list` | ✅ | `argv[0]` alias symlinks (`rq`, `uranus`, …). |
 | `import` | ✅ | Convert a legacy devdock `project.yaml` → the clean-slate two-file schema. |
-| `workspace destroy` / `uninstall` | ✅ | Tear down this workspace's stacks / reverse all machine-global artifacts. |
-| `shell` | 🚧 | Open a shell in a service container (planned). |
+| `workspace list/destroy` / `uninstall` | ✅ | List every registered workspace; tear down this workspace's stacks (`--purge-data` drops provisioned resources) / reverse all machine-global artifacts. |
+| `shell <service>` | ✅ | Open an interactive shell (or `-- <cmd>`) in a service container. |
+| **`db` / `s3` / `queue` / `topic` / `stream`** | ✅ | **Local-cloud data plane** — create tenant-scoped databases + users, S3 buckets + object lifecycle, queues, pub/sub topics, and streams on the shared engines (or declare them in `devstack.yaml resources:`, provisioned at `up`). |
+| `resource list/show/create/rm/gc` | ✅ | Engine-agnostic view + management of every provisioned resource in the ledger. |
+| `aws -- <args>` | ✅ | Run the host `aws` CLI against the local LocalStack/MinIO endpoint (dev creds prefilled). |
 | `logs` | 🚧 | Stream / aggregate service logs (planned — [spec 16](docs/specs/16-logs-and-dashboard.md)). |
 
-Every headline command supports `--json` and `--quiet` for scripting/CI.
+Every headline command supports `--json` and `--quiet` for scripting/CI. **`logs` is the only remaining stub.**
 
 ## The global store (`~/.devstack`)
 
@@ -209,10 +212,9 @@ when unused. See **[ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 - **M4–M7** — secrets (`secret://` + SOPS+age/AWS/Infisical, no plaintext on disk), networking (Caddy proxy, `mkcert` trust, cloudflared tunnel, `dns`), orchestration glue (health gating, lifecycle hooks, profiles), `doctor --fix`, `workspace destroy`/`uninstall`, and self-update + `devstack import`.
 - **M8 (beta DX)** — `init` wizard, `template new` authoring, `secrets ingest` (`.env` → secrets), and conventional-commit **release automation** (released **v0.2.0+** automatically).
 
-**Next:** the **M9 local-cloud lane** (specs [26](docs/specs/26-cli-completeness.md)–[29](docs/specs/29-resource-commands.md)) — finish the CLI surface (`shell`, `logs`, `workspace list`), then a data-plane **resource layer** (databases/users, S3 buckets + lifecycle, queues, streams) and cloud-emulation **engines** (LocalStack, NATS, Kafka). The only command stubs today are `shell` and `logs`.
+- **M9 (local cloud)** — the CLI-completeness pass (`shell`, `workspace list`, `tunnel up/down`, `up --rebuild/--skip-clone`), a data-plane **resource layer** (a per-engine `Provisioner` family + a declarative `resources:` block + `resource`/`db`/`s3`/`queue`/`topic`/`stream` verbs), and net-new cloud-emulation **engine templates** (LocalStack, NATS, Kafka/Redpanda, RabbitMQ). Databases, users, buckets + object lifecycle, queues, topics, and streams are all tenant-scoped, ledger-tracked, and reachable over `devstack_shared`.
 
-Then: secrets (M4) · networking/local-HTTPS (M5) · orchestrated onboarding + health
-+ hooks (M6) · hardening + GA (M7). See **[ROADMAP.md](docs/ROADMAP.md)**.
+**The only remaining command stub is `logs`** (the full log/dashboard cockpit is [spec 16](docs/specs/16-logs-and-dashboard.md), still v2). Roadmap detail: **[ROADMAP.md](docs/ROADMAP.md)**.
 
 ## Requirements
 

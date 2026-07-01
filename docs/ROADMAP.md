@@ -92,7 +92,7 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 
 **Sequencing within M8:** M8.0 → M8.1 (lands `internal/prompt` + the shared emitter) → M8.2 (reuses both) → M8.3 (reuses prompt, adds the heaviest net-new backend). After each charm-dep add: re-run `make vuln` + the `CGO_ENABLED=0` static cross-build; no build tags may creep in.
 
-### M9 — Local-cloud platform lane (post-M8, v0.x beta) · **~14w**
+### M9 — Local-cloud platform lane (post-M8, v0.x beta) · **~14w** · ✅ SHIPPED (v0.5.0–v0.9.0)
 > Generalizes provision-on-demand (Postgres-only today) into a full data-plane resource layer and adds cloud-emulation engines, turning the shared-infra tool into a local cloud. Strictly additive; stays 0.x. Specs: [26](specs/26-cli-completeness.md) (CLI/README reconcile) · [27](specs/27-resource-layer.md) (resource model + Provisioner family) · [28](specs/28-cloud-engine-templates.md) (cloud engines) · [29](specs/29-resource-commands.md) (imperative verbs). Every mutation goes through `internal/lock`; engine tools (mc/aws/nats/rpk) shell out behind `internal/` interfaces (CGO-free rule); only generated artifacts are determinism-gated, ledger/runtime ops are not.
 
 **M9.0 — CLI completeness & README reconciliation (the credibility gate) · 2w.** ([spec 26](specs/26-cli-completeness.md))
