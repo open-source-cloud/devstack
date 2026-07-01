@@ -1,0 +1,31 @@
+name: devstack-lint
+services:
+  ministack:
+    environment:
+      AWS_DEFAULT_REGION: us-east-1
+      PERSIST_STATE: "1"
+      SERVICES: s3,sqs,sns
+      STATE_DIR: /var/lib/ministack
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:4566/_ministack/ready
+      timeout: 5s
+      interval: 10s
+      retries: 8
+      start_period: 20s
+    image: ministackorg/ministack:latest
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: ministackdata
+        target: /var/lib/ministack
+        volume: {}
+networks:
+  default:
+    name: devstack-lint_default
+volumes:
+  ministackdata:
+    name: devstack-lint_ministackdata

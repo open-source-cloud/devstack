@@ -22,6 +22,7 @@ func TestCloudEngineTemplatesLint(t *testing.T) {
 		wantIn   string // a literal that must survive into the rendered compose
 	}{
 		{"localstack", "aws", 4566, "_localstack/health"},
+		{"ministack", "aws", 4566, "_ministack/ready"},
 		{"nats", "nats", 4222, "-js"},
 		{"kafka", "kafka", 9092, "advertise-kafka-addr=internal://shared-kafka:9092"},
 		{"rabbitmq", "amqp", 5672, "rabbitmq-diagnostics -q ping"},
@@ -75,6 +76,7 @@ func cloudResolver() *graphResolver {
 			Shared: map[string]config.SharedSvc{
 				"localstack": {Template: "localstack", Params: map[string]any{"region": "eu-west-1"}},
 				"awsdefault": {Template: "localstack"},
+				"ministack":  {Template: "ministack", Params: map[string]any{"region": "ap-south-1"}},
 				"nats":       {Template: "nats"},
 				"kafka":      {Template: "kafka"},
 				"rabbitmq":   {Template: "rabbitmq"},
@@ -87,6 +89,7 @@ func cloudResolver() *graphResolver {
 		sharedPort: map[string]int{
 			"localstack": 4566,
 			"awsdefault": 4566,
+			"ministack":  4566,
 			"nats":       4222,
 			"kafka":      9092,
 			"rabbitmq":   5672,
@@ -108,6 +111,13 @@ func TestSharedAttr_EndpointAndRegion(t *testing.T) {
 	}
 	if got, err := r.sharedAttr("awsdefault", "region"); err != nil || got != "us-east-1" {
 		t.Errorf("region default = %q err=%v, want us-east-1", got, err)
+	}
+	// ministack shares the generic AWS-emulation export path with localstack.
+	if got, err := r.sharedAttr("ministack", "endpoint"); err != nil || got != "http://shared-ministack:4566" {
+		t.Errorf("ministack endpoint = %q err=%v, want http://shared-ministack:4566", got, err)
+	}
+	if got, err := r.sharedAttr("ministack", "region"); err != nil || got != "ap-south-1" {
+		t.Errorf("ministack region = %q err=%v, want ap-south-1 (the param)", got, err)
 	}
 }
 
