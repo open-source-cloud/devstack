@@ -21,7 +21,7 @@ BINDIR      ?= $(or $(XDG_BIN_HOME),$(PREFIX)/bin)
 
 # The release binary MUST be CGO-free (static), but `go test -race` REQUIRES cgo.
 # So CGO is set per-target, never globally.
-.PHONY: build run test test-race integration e2e test-one vet fmt fmt-check lint tidy vuln clean snapshot ci determinism install uninstall smoke help
+.PHONY: build run test test-race integration e2e test-one vet fmt fmt-check lint tidy vuln clean snapshot cross ci nightly determinism install uninstall smoke help
 
 build: ## Build the static binary into ./dist
 	CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o dist/$(BINARY) ./cmd/devstack
@@ -63,7 +63,15 @@ tidy: ## go mod tidy
 snapshot: ## Local goreleaser snapshot build (no publish)
 	go run github.com/goreleaser/goreleaser/v2@latest release --snapshot --clean
 
+cross: ## Cross-compile the 4 CGO-free release targets (build-only, output discarded)
+	@set -eu; for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do \
+	  echo "-> $$t"; \
+	  GOOS=$${t%/*} GOARCH=$${t#*/} CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o /dev/null ./cmd/devstack; \
+	done
+
 ci: fmt-check vet build test-race ## What CI runs
+
+nightly: fmt-check vet cross test-race determinism ## Full nightly gate (make ci + 4-target cross-build + determinism)
 
 determinism: build ## Assert generation is byte-identical across runs/paths (M1, spec 02)
 	@set -eu; \
