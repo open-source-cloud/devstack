@@ -105,6 +105,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newSelfCmd(g),
 		newStoreCmd(g),
 		newAliasCmd(g),
+		newTelemetryCmd(g),
 		newVersionCmd(),
 	)
 	addStubCommands(root, g)

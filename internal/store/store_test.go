@@ -62,6 +62,65 @@ func TestInitAndLoadRoundTrip(t *testing.T) {
 	}
 }
 
+func TestTelemetryDefaultOff(t *testing.T) {
+	t.Setenv(HomeEnv, t.TempDir())
+	// Never decided (no store) → OFF, no error.
+	consent, err := TelemetryConsent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if consent.Enabled {
+		t.Fatal("telemetry must default OFF with no store present")
+	}
+}
+
+func TestTelemetryEnableDisableRoundTrip(t *testing.T) {
+	t.Setenv(HomeEnv, t.TempDir())
+
+	// Enable works even before `store init` and mints an install id + consentAt.
+	on, err := SetTelemetry(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !on.Enabled || on.InstallID == "" || on.ConsentAt == "" {
+		t.Fatalf("enable produced %+v; want enabled with install id + consentAt", on)
+	}
+
+	// Persisted to the global config.yaml.
+	got, err := TelemetryConsent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled || got.InstallID != on.InstallID {
+		t.Fatalf("persisted consent = %+v, want enabled with install id %q", got, on.InstallID)
+	}
+
+	// Disable flips it OFF and clears the correlatable install id.
+	off, err := SetTelemetry(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.Enabled || off.InstallID != "" {
+		t.Fatalf("disable produced %+v; want disabled with no install id", off)
+	}
+	got, err = TelemetryConsent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled {
+		t.Fatal("consent should be OFF after disable")
+	}
+
+	// Enabling shared-service defaults are preserved (we didn't clobber the store).
+	cfg, ok, err := Load()
+	if err != nil || !ok {
+		t.Fatalf("Load: ok=%v err=%v", ok, err)
+	}
+	if _, ok := cfg.Shared["postgres"]; !ok {
+		t.Error("enable/disable clobbered the default shared services")
+	}
+}
+
 func TestLoadAbsentIsNotError(t *testing.T) {
 	t.Setenv(HomeEnv, t.TempDir())
 	cfg, ok, err := Load()

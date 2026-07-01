@@ -36,6 +36,5 @@ func addStubCommands(root *cobra.Command, _ *GlobalOpts) {
 		stub("logs", "Stream service logs", "v2 (spec 16)"),
 		stub("dashboard", "Live TUI cockpit", "v2 (spec 16)"),
 		stub("ide", "Generate devcontainer/.code-workspace/launch configs", "v2 (spec 17)"),
-		stub("telemetry", "Opt-in usage telemetry (default OFF)", "a later release (spec 20)"),
 	)
 }
