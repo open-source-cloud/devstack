@@ -30,12 +30,12 @@ func msgPrefixed(project, name string, noPrefix bool) string {
 }
 
 // engineForFlag maps a user-facing --engine value to the registry engine key. The
-// LocalStack provisioner is registered under "aws" (the localstack template's
-// `provides: aws`), so both sqs and sns resolve there.
+// LocalStack provisioner is keyed by the template name "localstack" (its
+// `provides: aws` endpoint), so sqs/sns/aws all resolve there.
 func engineForFlag(flag string) string {
 	switch flag {
-	case "sqs", "sns", "aws":
-		return "aws"
+	case "sqs", "sns", "aws", "localstack":
+		return "localstack"
 	case "nats":
 		return "nats"
 	case "kafka":

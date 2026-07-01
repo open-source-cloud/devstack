@@ -27,7 +27,7 @@ func newQueueCmd(g *GlobalOpts) *cobra.Command {
 // inference order (prefer NATS, then Redis, then LocalStack SQS).
 var (
 	queueEngines = []string{"nats", "sqs", "redis"}
-	queueOrder   = []string{"nats", "redis", "aws"}
+	queueOrder   = []string{"nats", "redis", "localstack"}
 )
 
 func newQueueCreateCmd(g *GlobalOpts) *cobra.Command {
@@ -61,7 +61,7 @@ func newQueueCreateCmd(g *GlobalOpts) *cobra.Command {
 			// main queue references it for a redrive policy (spec 29 §SQS FIFO/DLQ).
 			var dlqPhysical string
 			if dlq != "" {
-				if eng != "aws" {
+				if eng != "localstack" {
 					return fmt.Errorf("--dlq is only supported for --engine sqs")
 				}
 				dlqPhysical = msgPrefixed(proj, dlq, noPrefix)

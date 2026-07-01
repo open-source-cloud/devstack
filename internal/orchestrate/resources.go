@@ -48,9 +48,9 @@ var engineOverlays = map[string]perEngineOverlay{
 	// base is 49092 to match the advertised address (a mismatch breaks the Kafka
 	// bootstrap→redirect handshake, the #1 local-Kafka footgun).
 	"kafka": {"kafka-provision", 49092, 19092},
-	// LocalStack's edge port (4566) serves every AWS service (SQS/SNS/S3/…); engine
-	// key "aws" matches the template's `provides: aws`.
-	"aws": {"localstack-provision", 44566, 4566},
+	// LocalStack's edge port (4566) serves every AWS service (SQS/SNS/S3/…); keyed by
+	// the template name "localstack" (its `provides: aws` is reached on this port).
+	"localstack": {"localstack-provision", 44566, 4566},
 }
 
 // declaredKind reports whether a ledger kind is one the declarative resources

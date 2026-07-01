@@ -49,8 +49,10 @@ type (
 	SNSFactory func(ctx context.Context, t Target) (SNSAPI, error)
 )
 
-// LocalStack is the aws (SQS/SNS) Provisioner. Registered under engine "aws" (the
-// localstack template's `provides: aws`). Factories nil → the real clients.
+// LocalStack is the LocalStack (SQS/SNS) Provisioner. It is keyed by the shared
+// TEMPLATE name "localstack" (what ResolveInstance matches on) while the SQS/SNS
+// clients target the template's `provides: aws` endpoint on :4566. Factories nil →
+// the real clients.
 type LocalStack struct {
 	SQSFactory SQSFactory
 	SNSFactory SNSFactory
@@ -58,8 +60,9 @@ type LocalStack struct {
 
 var _ Provisioner = LocalStack{}
 
-// Engine reports the shared-template capability this provisioner serves.
-func (LocalStack) Engine() string { return "aws" }
+// Engine reports the shared-template name this provisioner serves ("localstack";
+// the template's `provides: aws` is reached over the same instance's endpoint).
+func (LocalStack) Engine() string { return "localstack" }
 
 // Kinds are the resource kinds this provisioner can create.
 func (LocalStack) Kinds() []string { return []string{"queue", "topic"} }

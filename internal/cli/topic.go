@@ -27,7 +27,7 @@ func newTopicCmd(g *GlobalOpts) *cobra.Command {
 // inference order (prefer Kafka, then NATS subjects, then LocalStack SNS).
 var (
 	topicEngines = []string{"sns", "kafka", "nats"}
-	topicOrder   = []string{"kafka", "nats", "aws"}
+	topicOrder   = []string{"kafka", "nats", "localstack"}
 )
 
 func newTopicCreateCmd(g *GlobalOpts) *cobra.Command {
@@ -54,7 +54,7 @@ func newTopicCreateCmd(g *GlobalOpts) *cobra.Command {
 			name := msgPrefixed(proj, args[0], noPrefix)
 			params := map[string]any{}
 			if subscribe != "" {
-				if eng != "aws" {
+				if eng != "localstack" {
 					return fmt.Errorf("--subscribe (SNS→SQS fan-out) is only supported for --engine sns")
 				}
 				params["subscribe"] = msgPrefixed(proj, subscribe, noPrefix)

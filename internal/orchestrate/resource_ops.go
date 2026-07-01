@@ -44,7 +44,7 @@ func engineDefaultAdmin(engine string) string {
 	switch engine {
 	case "minio":
 		return "devstackadmin"
-	case "aws":
+	case "localstack":
 		// LocalStack accepts any credentials; the community convention is "test".
 		return "test"
 	default:

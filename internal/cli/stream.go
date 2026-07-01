@@ -10,6 +10,26 @@ import (
 	"github.com/open-source-cloud/devstack/internal/resource"
 )
 
+// validateStreamFlags enforces the per-engine flag rules at parse time: --partitions
+// and --replicas are KAFKA-only (a NATS JetStream stream has no partition model), and
+// --retention (when set) must be a valid Go duration.
+func validateStreamFlags(engine string, partitionsChanged, replicasChanged bool, retention string) error {
+	if engine == "nats" {
+		if partitionsChanged {
+			return fmt.Errorf("--partitions is only valid for --engine kafka (a NATS stream has no partitions)")
+		}
+		if replicasChanged {
+			return fmt.Errorf("--replicas is only valid for --engine kafka")
+		}
+	}
+	if retention != "" {
+		if _, err := time.ParseDuration(retention); err != nil {
+			return fmt.Errorf("invalid --retention %q (want a Go duration like 168h): %w", retention, err)
+		}
+	}
+	return nil
+}
+
 // newStreamCmd wires the `devstack stream` group (spec 29 §messaging — durable
 // streams): tenant-scoped streams on the NATIVE default NATS (JetStream) or a
 // Kafka (Redpanda) partitioned topic. create/rm go through the flock via internal/
@@ -57,19 +77,9 @@ func newStreamCreateCmd(g *GlobalOpts) *cobra.Command {
 			}
 			// --partitions/--replicas are a Kafka partition-model concept; a NATS
 			// JetStream stream has neither. Reject them for NATS at parse time
-			// (spec 29 §NATS work-queue vs Kafka partitions).
-			if eng == "nats" {
-				if cmd.Flags().Changed("partitions") {
-					return fmt.Errorf("--partitions is only valid for --engine kafka (a NATS stream has no partitions)")
-				}
-				if cmd.Flags().Changed("replicas") {
-					return fmt.Errorf("--replicas is only valid for --engine kafka")
-				}
-			}
-			if retention != "" {
-				if _, perr := time.ParseDuration(retention); perr != nil {
-					return fmt.Errorf("invalid --retention %q (want a Go duration like 168h): %w", retention, perr)
-				}
+			// (spec 29 §NATS work-queue vs Kafka partitions). --retention must parse.
+			if err := validateStreamFlags(eng, cmd.Flags().Changed("partitions"), cmd.Flags().Changed("replicas"), retention); err != nil {
+				return err
 			}
 			name := msgPrefixed(proj, args[0], noPrefix)
 			params := map[string]any{}
