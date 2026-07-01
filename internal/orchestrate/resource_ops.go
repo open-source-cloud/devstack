@@ -22,7 +22,9 @@ import (
 
 // ResourceRegistry exposes the engine→Provisioner registry (Postgres live; other
 // engines land in Full scope), wired with the injected connector.
-func ResourceRegistry(connect PgConnector) *resource.Registry { return resourceRegistry(connect) }
+func ResourceRegistry(connect PgConnector) *resource.Registry {
+	return resource.NewRegistry(resource.Postgres{Connect: toResourceConnector(connect)})
+}
 
 // ResolveInstance returns the shared instance name serving engine (first shared
 // service whose template == engine, matching the pgInstances convention).
@@ -35,20 +37,30 @@ func ResolveInstance(m *config.Model, engine string) (string, bool) {
 	return "", false
 }
 
+// engineDefaultAdmin is the per-engine fallback root credential when the shared
+// instance's params don't set rootUser/rootPassword (matching the engine
+// templates: postgres → devstack, minio → devstackadmin).
+func engineDefaultAdmin(engine string) string {
+	if engine == "minio" {
+		return "devstackadmin"
+	}
+	return "devstack"
+}
+
 // engineTarget resolves the host-reachable admin endpoint for an instance: it
 // allocates/looks up the ledger port, writes+applies the per-engine 127.0.0.1
 // overlay via `compose up -d <inst>` (idempotent, no recreate), and returns the
-// Target with the instance's admin creds. Postgres is the only overlay wired.
+// Target with the instance's admin creds. Postgres + MinIO overlays are wired.
 func engineTarget(ctx context.Context, d UpDeps, engine, instance string) (resource.Target, error) {
 	ov, ok := engineOverlays[engine]
 	if !ok {
-		return resource.Target{}, fmt.Errorf("engine %q has no host-reachability overlay (only postgres in this milestone)", engine)
+		return resource.Target{}, fmt.Errorf("engine %q has no host-reachability overlay (postgres/minio in this milestone)", engine)
 	}
 	port, err := d.Manager.FreeHostPort(ctx, generate.SharedAlias(instance), ov.purpose, ov.portBase)
 	if err != nil {
 		return resource.Target{}, fmt.Errorf("allocate host port for %s: %w", instance, err)
 	}
-	overlay, err := writeProvisionOverlay(d.Model.Root, map[string]int{instance: port})
+	overlay, err := writeProvisionOverlay(d.Model.Root, map[string]int{instance: port}, ov.containerPort)
 	if err != nil {
 		return resource.Target{}, err
 	}
@@ -66,11 +78,12 @@ func engineTarget(ctx context.Context, d UpDeps, engine, instance string) (resou
 		return resource.Target{}, fmt.Errorf("apply host overlay for %s: %w", instance, err)
 	}
 	params := d.Model.Workspace.Shared[instance].Params
+	def := engineDefaultAdmin(engine)
 	return resource.Target{
 		Instance: instance, Host: "127.0.0.1", Port: port,
 		AdminEnv: map[string]string{
-			"user":     paramString(params, "rootUser", "devstack"),
-			"password": paramString(params, "rootPassword", "devstack"),
+			"user":     paramString(params, "rootUser", def),
+			"password": paramString(params, "rootPassword", def),
 		},
 	}, nil
 }
@@ -82,7 +95,7 @@ func CreateResource(ctx context.Context, d UpDeps, r resource.Resource) (resourc
 	if !ok {
 		return nil, fmt.Errorf("no shared %q instance in this workspace (declare one under workspace.shared and run `devstack up`)", r.Engine)
 	}
-	reg := ResourceRegistry(d.PgConnect)
+	reg := buildRegistry(d)
 	prov, ok := reg.For(r.Engine)
 	if !ok {
 		return nil, fmt.Errorf("no provisioner for engine %q (lands in spec 27 Full scope)", r.Engine)
@@ -141,7 +154,7 @@ func DropResource(ctx context.Context, d UpDeps, r resource.Resource, purge bool
 		if !ok {
 			return fmt.Errorf("no shared %q instance to drop %s/%s from", r.Engine, r.Kind, r.Name)
 		}
-		reg := ResourceRegistry(d.PgConnect)
+		reg := buildRegistry(d)
 		prov, ok := reg.For(r.Engine)
 		if !ok {
 			return fmt.Errorf("no provisioner for engine %q (cannot --purge-data)", r.Engine)
@@ -200,7 +213,7 @@ func GCResources(ctx context.Context, d UpDeps, active map[string]bool) (GCResul
 	if err != nil {
 		return res, err
 	}
-	reg := ResourceRegistry(d.PgConnect)
+	reg := buildRegistry(d)
 	for _, o := range orphans {
 		engine, instance, prov, ok := engineForRow(d, reg, o.Kind)
 		if !ok {

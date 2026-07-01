@@ -100,9 +100,11 @@ func provInstanceList(targets []provTarget) []string {
 }
 
 // writeProvisionOverlay writes the up-time compose overlay that publishes each
-// provisioned Postgres instance on 127.0.0.1:<hostPort>. Returns the overlay path.
-// Loopback-only so nothing is exposed beyond the host (spec 03 / no host ports).
-func writeProvisionOverlay(root string, ports map[string]int) (string, error) {
+// provisioned instance on 127.0.0.1:<hostPort>:<containerPort>. Returns the overlay
+// path. Loopback-only so nothing is exposed beyond the host (spec 03 / no host
+// ports). containerPort is the engine's in-container port (5432 postgres / 9000
+// minio); every instance in ports shares one engine, so one container port covers all.
+func writeProvisionOverlay(root string, ports map[string]int, containerPort int) (string, error) {
 	var b strings.Builder
 	b.WriteString("services:\n")
 	insts := make([]string, 0, len(ports))
@@ -111,7 +113,7 @@ func writeProvisionOverlay(root string, ports map[string]int) (string, error) {
 	}
 	sort.Strings(insts)
 	for _, inst := range insts {
-		fmt.Fprintf(&b, "  %s:\n    ports:\n      - \"127.0.0.1:%d:5432\"\n", inst, ports[inst])
+		fmt.Fprintf(&b, "  %s:\n    ports:\n      - \"127.0.0.1:%d:%d\"\n", inst, ports[inst], containerPort)
 	}
 	dir := filepath.Join(root, generate.GenDir, "shared")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

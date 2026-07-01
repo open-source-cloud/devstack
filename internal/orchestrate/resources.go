@@ -112,15 +112,22 @@ func collectResourceDecls(m *config.Model, active profile.Active) []resDecl {
 	return out
 }
 
-// resourceRegistry builds the engine→Provisioner registry the phase/commands use,
-// wired with the injected Postgres connector so provisioning is daemon-free in
-// tests. Only Postgres is live in this milestone.
-func resourceRegistry(connect PgConnector) *resource.Registry {
-	var pgConn resource.PgConnector
-	if connect != nil {
-		pgConn = resource.PgConnector(connect)
+// toResourceConnector adapts an orchestrate PgConnector to the resource one.
+func toResourceConnector(connect PgConnector) resource.PgConnector {
+	if connect == nil {
+		return nil
 	}
-	return resource.NewRegistry(resource.Postgres{Connect: pgConn})
+	return resource.PgConnector(connect)
+}
+
+// buildRegistry builds the engine→Provisioner registry the phase/commands use,
+// wired with the injected Postgres connector + S3 factory so provisioning is
+// daemon/endpoint-free in tests. Postgres + MinIO are live in this milestone.
+func buildRegistry(d UpDeps) *resource.Registry {
+	return resource.NewRegistry(
+		resource.Postgres{Connect: toResourceConnector(d.PgConnect)},
+		resource.MinIO{Factory: d.S3Factory},
+	)
 }
 
 // resourcesPhase provisions declared resources idempotently and reports drift.
@@ -138,7 +145,7 @@ func resourcesPhase(d UpDeps, decls []resDecl) Phase {
 			return Fingerprint(append([]string{"resources"}, keys...)...), nil
 		},
 		Run: func(ctx context.Context) (any, error) {
-			reg := resourceRegistry(d.PgConnect)
+			reg := buildRegistry(d)
 
 			// Resolve each instance's published host port (idempotent — returns the
 			// port the shared/provision phase already allocated).
