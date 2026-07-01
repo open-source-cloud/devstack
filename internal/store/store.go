@@ -18,8 +18,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/goccy/go-yaml"
+	"github.com/google/uuid"
 
 	"github.com/open-source-cloud/devstack/internal/config"
 )
@@ -78,6 +80,21 @@ type Config struct {
 	APIVersion string                      `yaml:"apiVersion"`
 	Kind       string                      `yaml:"kind"`
 	Shared     map[string]config.SharedSvc `yaml:"shared"`
+	// Telemetry is the per-user/per-machine opt-in usage-telemetry consent
+	// (spec 20). It lives here — never in workspace.yaml (must not be committed)
+	// and never in state.db (it's user policy, not ledger state). Default OFF: a
+	// zero value / missing block means telemetry has never been enabled.
+	Telemetry TelemetryConfig `yaml:"telemetry"`
+}
+
+// TelemetryConfig is the persisted telemetry consent. Enabled defaults to false
+// and is only ever set true by an explicit `telemetry enable`. InstallID is a
+// random UUIDv4 minted on first enable (rotatable, not machine-derived); it is
+// cleared when telemetry is disabled.
+type TelemetryConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	InstallID string `yaml:"installId,omitempty"`
+	ConsentAt string `yaml:"consentAt,omitempty"`
 }
 
 // DefaultConfig is the seed written by `store init`: one warm Postgres, Redis,
@@ -137,6 +154,61 @@ func (c Config) Save() error {
 		return err
 	}
 	return os.Rename(tmpName, ConfigPath())
+}
+
+// loadOrDefault returns the persisted store config, or a fresh DefaultConfig when
+// the store has not been initialized yet. Used by the telemetry consent mutators
+// so `telemetry enable` works before `store init`.
+func loadOrDefault() (*Config, error) {
+	cfg, ok, err := Load()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		c := DefaultConfig()
+		return &c, nil
+	}
+	return cfg, nil
+}
+
+// TelemetryConsent reads the persisted telemetry consent. A missing/uninitialized
+// store means "never decided" → OFF (default). It never errors on absence.
+func TelemetryConsent() (TelemetryConfig, error) {
+	cfg, ok, err := Load()
+	if err != nil {
+		return TelemetryConfig{}, err
+	}
+	if !ok {
+		return TelemetryConfig{}, nil
+	}
+	return cfg.Telemetry, nil
+}
+
+// SetTelemetry flips the persisted consent and saves the store config (creating
+// the store with defaults if needed). Enabling mints a random UUIDv4 install id
+// and stamps consentAt if not already set; disabling clears the install id so a
+// disabled user carries no correlatable identifier. Returns the resulting consent.
+func SetTelemetry(enabled bool) (TelemetryConfig, error) {
+	cfg, err := loadOrDefault()
+	if err != nil {
+		return TelemetryConfig{}, err
+	}
+	cfg.Telemetry.Enabled = enabled
+	if enabled {
+		if cfg.Telemetry.InstallID == "" {
+			cfg.Telemetry.InstallID = uuid.NewString()
+		}
+		if cfg.Telemetry.ConsentAt == "" {
+			cfg.Telemetry.ConsentAt = time.Now().UTC().Format(time.RFC3339)
+		}
+	} else {
+		cfg.Telemetry.InstallID = ""
+		cfg.Telemetry.ConsentAt = ""
+	}
+	if err := cfg.Save(); err != nil {
+		return TelemetryConfig{}, err
+	}
+	return cfg.Telemetry, nil
 }
 
 // templatesReadme is seeded into ~/.devstack/templates so the dir is discoverable.
