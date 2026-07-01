@@ -2,16 +2,19 @@ package resource
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithy "github.com/aws/smithy-go"
 )
 
 // fakeS3 is an in-memory S3API for the MinIO provisioner tests (no live endpoint).
 type fakeS3 struct {
 	buckets    map[string]bool
+	objects    map[string][]string // bucket → object keys
 	versioning map[string]string
 	lifecycle  map[string][]s3types.LifecycleRule
 	policy     map[string]string
@@ -22,6 +25,7 @@ type fakeS3 struct {
 func newFakeS3() *fakeS3 {
 	return &fakeS3{
 		buckets:    map[string]bool{},
+		objects:    map[string][]string{},
 		versioning: map[string]string{},
 		lifecycle:  map[string][]s3types.LifecycleRule{},
 		policy:     map[string]string{},
@@ -47,11 +51,45 @@ func (f *fakeS3) HeadBucket(_ context.Context, in *s3.HeadBucketInput, _ ...func
 
 func (f *fakeS3) DeleteBucket(_ context.Context, in *s3.DeleteBucketInput, _ ...func(*s3.Options)) (*s3.DeleteBucketOutput, error) {
 	f.calls = append(f.calls, "DeleteBucket:"+aws.ToString(in.Bucket))
-	if !f.buckets[aws.ToString(in.Bucket)] {
+	name := aws.ToString(in.Bucket)
+	if !f.buckets[name] {
 		return nil, &s3types.NoSuchBucket{}
 	}
-	delete(f.buckets, aws.ToString(in.Bucket))
+	// Match S3/MinIO: a bucket with objects cannot be removed without emptying it.
+	if len(f.objects[name]) > 0 {
+		return nil, &smithy.GenericAPIError{Code: "BucketNotEmpty", Message: "bucket not empty"}
+	}
+	delete(f.buckets, name)
 	return &s3.DeleteBucketOutput{}, nil
+}
+
+func (f *fakeS3) ListObjectsV2(_ context.Context, in *s3.ListObjectsV2Input, _ ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
+	name := aws.ToString(in.Bucket)
+	if !f.buckets[name] {
+		return nil, &s3types.NoSuchBucket{}
+	}
+	out := &s3.ListObjectsV2Output{IsTruncated: aws.Bool(false)}
+	for _, k := range f.objects[name] {
+		out.Contents = append(out.Contents, s3types.Object{Key: aws.String(k)})
+	}
+	return out, nil
+}
+
+func (f *fakeS3) DeleteObjects(_ context.Context, in *s3.DeleteObjectsInput, _ ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
+	name := aws.ToString(in.Bucket)
+	f.calls = append(f.calls, "DeleteObjects:"+name)
+	del := map[string]bool{}
+	for _, o := range in.Delete.Objects {
+		del[aws.ToString(o.Key)] = true
+	}
+	var keep []string
+	for _, k := range f.objects[name] {
+		if !del[k] {
+			keep = append(keep, k)
+		}
+	}
+	f.objects[name] = keep
+	return &s3.DeleteObjectsOutput{}, nil
 }
 
 func (f *fakeS3) ListBuckets(_ context.Context, _ *s3.ListBucketsInput, _ ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
@@ -271,5 +309,44 @@ func TestMinIODropBucket(t *testing.T) {
 	// Idempotent: dropping a missing bucket is not an error.
 	if err := m.Drop(context.Background(), minioTarget(), Resource{Engine: "minio", Kind: "bucket", Name: "web-uploads"}); err != nil {
 		t.Errorf("drop of missing bucket must be idempotent: %v", err)
+	}
+}
+
+func TestMinIODropForceEmptiesBucket(t *testing.T) {
+	f := newFakeS3()
+	f.buckets["web-uploads"] = true
+	f.objects["web-uploads"] = []string{"a.txt", "nested/b.txt"}
+	m := fakeMinIO(f)
+
+	// Without --force, a non-empty bucket cannot be removed (BucketNotEmpty).
+	if err := m.Drop(context.Background(), minioTarget(),
+		Resource{Engine: "minio", Kind: "bucket", Name: "web-uploads"}); err == nil {
+		t.Fatal("removing a non-empty bucket without --force must fail")
+	}
+	if !f.buckets["web-uploads"] {
+		t.Fatal("bucket must survive a failed non-force drop")
+	}
+
+	// With --force, every object is deleted first, then the bucket.
+	if err := m.Drop(context.Background(), minioTarget(), Resource{
+		Engine: "minio", Kind: "bucket", Name: "web-uploads",
+		Params: map[string]any{"force": true},
+	}); err != nil {
+		t.Fatalf("force drop: %v", err)
+	}
+	if f.buckets["web-uploads"] {
+		t.Error("bucket not removed by force drop")
+	}
+	if len(f.objects["web-uploads"]) != 0 {
+		t.Errorf("objects not purged: %v", f.objects["web-uploads"])
+	}
+	sawDeleteObjects := false
+	for _, c := range f.calls {
+		if strings.HasPrefix(c, "DeleteObjects:") {
+			sawDeleteObjects = true
+		}
+	}
+	if !sawDeleteObjects {
+		t.Errorf("force drop must call DeleteObjects: %v", f.calls)
 	}
 }

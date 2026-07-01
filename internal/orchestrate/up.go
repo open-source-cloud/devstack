@@ -54,6 +54,12 @@ type UpDeps struct {
 	// Secrets resolves secret:// refs; nil → built from workspace.secrets.providers
 	// with the built-in factories (SOPS+age). Injected for tests.
 	Secrets *secrets.Registry
+	// CredPusher, when non-nil, receives a resource's `generated` credential so the
+	// random value is written to a secrets backend (aws-sm/ssm/infisical) instead of
+	// only living in-process for the provisioner call. The plaintext never lands in a
+	// generated file (spec 04 valueless-env coupling); nil → no push (the value is
+	// still generated and used to provision, but not persisted anywhere).
+	CredPusher secrets.Pusher
 	// Trust installs the local CA when network.proxy.httpsLocal; nil → trust.New().
 	// Injected for tests (the trust phase is fenced — failure never aborts up).
 	Trust *trust.Trust

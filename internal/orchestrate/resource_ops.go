@@ -20,6 +20,33 @@ import (
 // CLI (internal/cli) is a thin wrapper over these; they are tested here with the
 // same mock docker client + injected Postgres connector the saga tests use.
 
+// generatedCredPath is the deterministic backend identifier a generated
+// credential is pushed to: devstack/<owner>/<engine>/<kind>/<name>. Stable across
+// re-provisions of the same resource so a rotation overwrites in place.
+func generatedCredPath(r resource.Resource) string {
+	name := r.Name
+	if name == "" {
+		name = r.Owner
+	}
+	return fmt.Sprintf("devstack/%s/%s/%s/%s", r.Owner, r.Engine, r.Kind, name)
+}
+
+// pushGeneratedCred writes a resource's generated credential to the configured
+// secrets Pusher (aws-sm/ssm/infisical). It is a no-op when no Pusher is wired —
+// the value is still used to provision but is not persisted, and it is NEVER
+// written to a generated file. The value travels via the Pusher's stdin/env path,
+// never argv (spec 04 §7.5).
+func pushGeneratedCred(ctx context.Context, d UpDeps, r resource.Resource, value string) error {
+	if d.CredPusher == nil {
+		return nil
+	}
+	entry := secrets.SecretEntry{Path: generatedCredPath(r), Value: value}
+	if err := d.CredPusher.Push(ctx, []secrets.SecretEntry{entry}); err != nil {
+		return fmt.Errorf("push generated credential for %s/%s: %w", r.Kind, r.Name, err)
+	}
+	return nil
+}
+
 // ResourceRegistry exposes the engine→Provisioner registry (Postgres live; other
 // engines land in Full scope), wired with the injected connector.
 func ResourceRegistry(connect PgConnector) *resource.Registry {
@@ -118,6 +145,11 @@ func CreateResource(ctx context.Context, d UpDeps, r resource.Resource) (resourc
 				r.Params = map[string]any{}
 			}
 			r.Params["password"] = pw
+			// Route the generated value through the secrets Pusher (when configured)
+			// so it is persisted to a backend, never a generated file (spec 04).
+			if err := pushGeneratedCred(ctx, d, r, pw); err != nil {
+				return nil, err
+			}
 		}
 	}
 	target, err := engineTarget(ctx, d, r.Engine, instance)

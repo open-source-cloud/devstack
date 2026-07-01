@@ -12,11 +12,11 @@ func TestRandomPasswordLengthAndUniqueness(t *testing.T) {
 			t.Errorf("RandomPassword(%d) len = %d, want %d (%q)", n, len(p), n, p)
 		}
 	}
-	// URL-safe alphabet only (no shell/DSN-hostile characters).
+	// Alphanumeric alphabet only (no shell/DSN-hostile characters, not even -/_).
 	p, _ := RandomPassword(128)
 	for _, r := range p {
-		if !(r == '-' || r == '_' || (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
-			t.Fatalf("RandomPassword produced non-url-safe rune %q in %q", r, p)
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')) {
+			t.Fatalf("RandomPassword produced non-alphanumeric rune %q in %q", r, p)
 		}
 	}
 	// Two draws must differ (astronomically likely).

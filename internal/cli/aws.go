@@ -24,12 +24,18 @@ func newAwsCmd(g *GlobalOpts) *cobra.Command {
 			"LocalStack/MinIO host port and prepends --endpoint-url/--region plus dev\n" +
 			"credentials (via the child environment). It does not reimplement any AWS call.\n\n" +
 			"Example: devstack aws -- s3 ls",
-		Args:               cobra.MinimumNArgs(1),
+		Args:               cobra.ArbitraryArgs,
 		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			args = stripLeadingDashDash(args)
-			if len(args) == 0 {
-				return fmt.Errorf("usage: devstack aws -- <args...> (e.g. devstack aws -- s3 ls)")
+			// Bare `aws` or a leading -h/--help is a request for THIS shim's help —
+			// short-circuit before constructing any docker/S3 client or touching the
+			// daemon. (DisableFlagParsing means cobra does not intercept --help itself,
+			// so a help token would otherwise be forwarded to the real aws endpoint.)
+			// A help flag AFTER a subcommand (e.g. `aws -- s3 --help`) passes through
+			// to the user's aws unchanged.
+			if len(args) == 0 || isHelpFlag(args[0]) {
+				return cmd.Help()
 			}
 			awsPath, err := lookupAws()
 			if err != nil {
@@ -69,6 +75,16 @@ func lookupAws() (string, error) {
 		return "", fmt.Errorf("the `aws` CLI is not installed or not on PATH — install it (https://aws.amazon.com/cli/) to use `devstack aws --`")
 	}
 	return p, nil
+}
+
+// isHelpFlag reports whether tok is a help request (-h/--help/help) meant for the
+// shim itself rather than the forwarded aws command.
+func isHelpFlag(tok string) bool {
+	switch tok {
+	case "-h", "--help", "help":
+		return true
+	}
+	return false
 }
 
 // stripLeadingDashDash drops a leading "--" separator (cobra with

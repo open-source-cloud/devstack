@@ -44,6 +44,8 @@ type S3API interface {
 	GetBucketPolicy(context.Context, *s3.GetBucketPolicyInput, ...func(*s3.Options)) (*s3.GetBucketPolicyOutput, error)
 	PutBucketCors(context.Context, *s3.PutBucketCorsInput, ...func(*s3.Options)) (*s3.PutBucketCorsOutput, error)
 	GetBucketCors(context.Context, *s3.GetBucketCorsInput, ...func(*s3.Options)) (*s3.GetBucketCorsOutput, error)
+	ListObjectsV2(context.Context, *s3.ListObjectsV2Input, ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	DeleteObjects(context.Context, *s3.DeleteObjectsInput, ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
 }
 
 // S3Factory builds an S3API for a resolved Target (the 127.0.0.1 overlay endpoint
@@ -198,6 +200,13 @@ func (m MinIO) Drop(ctx context.Context, t Target, r Resource) error {
 		}
 		return nil
 	}
+	// `rb --force` (Params["force"]): recursively purge every object first so a
+	// non-empty bucket can be removed (a plain DeleteBucket fails with BucketNotEmpty).
+	if boolParam(r.Params, "force") {
+		if err := m.emptyBucket(ctx, c, bucket); err != nil {
+			return err
+		}
+	}
 	if _, err := c.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)}); err != nil {
 		if isNotFound(err) {
 			return nil
@@ -205,6 +214,41 @@ func (m MinIO) Drop(ctx context.Context, t Target, r Resource) error {
 		return fmt.Errorf("delete bucket %q: %w", bucket, err)
 	}
 	return nil
+}
+
+// emptyBucket recursively deletes every object in the bucket via paginated
+// ListObjectsV2 + batched DeleteObjects, so a `rb --force` can remove a non-empty
+// bucket. Idempotent: an already-empty or missing bucket is a no-op.
+func (MinIO) emptyBucket(ctx context.Context, c S3API, bucket string) error {
+	var token *string
+	for {
+		out, err := c.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucket),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			if isNotFound(err) {
+				return nil
+			}
+			return fmt.Errorf("list objects in %q: %w", bucket, err)
+		}
+		if len(out.Contents) > 0 {
+			ids := make([]s3types.ObjectIdentifier, 0, len(out.Contents))
+			for _, o := range out.Contents {
+				ids = append(ids, s3types.ObjectIdentifier{Key: o.Key})
+			}
+			if _, err := c.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(bucket),
+				Delete: &s3types.Delete{Objects: ids, Quiet: aws.Bool(true)},
+			}); err != nil {
+				return fmt.Errorf("delete objects in %q: %w", bucket, err)
+			}
+		}
+		if out.IsTruncated == nil || !*out.IsTruncated {
+			return nil
+		}
+		token = out.NextContinuationToken
+	}
 }
 
 // Preflight verifies the endpoint is reachable and the creds are valid (a

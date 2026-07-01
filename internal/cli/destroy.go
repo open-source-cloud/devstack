@@ -66,7 +66,7 @@ func newWorkspaceDestroyCmd(g *GlobalOpts) *cobra.Command {
 			if !yes {
 				dataLine := "Volumes and databases are PRESERVED."
 				if purgeData {
-					dataLine = "WARNING: --purge-data DROPS every provisioned database/bucket/etc (DATA DESTROYED)."
+					dataLine = "WARNING: --purge-data DROPS every provisioned database/bucket/etc AND removes the shared volumes (DATA DESTROYED)."
 				}
 				prompt := fmt.Sprintf(
 					"This tears down workspace %q (%d project stack(s)) and releases its refs/ports.\n"+
@@ -93,6 +93,9 @@ func newWorkspaceDestroyCmd(g *GlobalOpts) *cobra.Command {
 				}
 				for _, p := range res.PurgedResources {
 					fmt.Fprintf(w, "[ok]      dropped %s %s\n", p["kind"], p["name"])
+				}
+				for _, v := range res.PurgedVolumes {
+					fmt.Fprintf(w, "[ok]      removed volumes for %s\n", v)
 				}
 				for _, e := range res.Errors {
 					fmt.Fprintf(w, "[warn]    %s\n", e)
@@ -121,6 +124,7 @@ type DestroyResult struct {
 	Projects        []string            `json:"projects"`                   // project stacks brought down
 	SharedStopped   []string            `json:"shared_stopped"`             // orphaned shared services warm-stopped
 	PurgedResources []map[string]string `json:"purged_resources,omitempty"` // --purge-data: resources dropped
+	PurgedVolumes   []string            `json:"purged_volumes,omitempty"`   // --purge-data: shared volumes removed (compose down -v)
 	Errors          []string            `json:"errors,omitempty"`
 }
 
@@ -206,6 +210,36 @@ func destroyWorkspace(ctx context.Context, d orchestrate.UpDeps, projects []stri
 		res.Errors = append(res.Errors, fmt.Sprintf("shared gc: %v", err))
 	} else {
 		res.SharedStopped = gc.Stopped
+	}
+
+	// 3b. --purge-data ALSO removes the shared stack's named volumes (the postgres
+	// PGDATA, MinIO object store, …) via `compose down -v`. This is gated on the
+	// shared stack being fully orphaned (no ref rows remain from ANY workspace), so
+	// destroy can never drop data another workspace still depends on. The
+	// data-preserving default never reaches here.
+	if purgeData {
+		remaining, err := d.DB.AllRefs()
+		if err != nil {
+			res.Errors = append(res.Errors, fmt.Sprintf("check remaining refs: %v", err))
+		} else if len(remaining) == 0 {
+			outDir := filepath.Join(d.Model.Root, generate.GenDir, "shared")
+			composeFile := filepath.Join(outDir, generate.ComposeFile)
+			if _, err := os.Stat(composeFile); err != nil {
+				composeFile = "" // label-driven `compose -p devstack-shared down -v`
+			}
+			cp := docker.Compose{Project: generate.SharedStackName, File: composeFile, Dir: outDir, Runner: runner}
+			if err := cp.Down(ctx, true); err != nil {
+				res.Errors = append(res.Errors, fmt.Sprintf("purge shared volumes: %v", err))
+			} else {
+				// Report the services whose volumes were removed (fall back to the
+				// stack name if nothing was warm-stopped this pass).
+				if len(res.SharedStopped) > 0 {
+					res.PurgedVolumes = append(res.PurgedVolumes, res.SharedStopped...)
+				} else {
+					res.PurgedVolumes = append(res.PurgedVolumes, generate.SharedStackName)
+				}
+			}
+		}
 	}
 
 	// 4. remove generated artifacts (.devstack): the workspace-root shared dir and

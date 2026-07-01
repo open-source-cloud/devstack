@@ -204,19 +204,22 @@ func resourcesPhase(d UpDeps, decls []resDecl) Phase {
 						Params: r.params, CredKind: r.cred,
 					}
 					// A `generated` credential gets a random value here so a consumer
-					// never sees a predictable password; Pusher delivery to a provider
-					// lands in Full scope, so the value is currently held only for the
-					// provisioner call (never written to a generated file).
+					// never sees a predictable password. When a secrets Pusher is wired
+					// (d.CredPusher) the value is delivered to the backend; either way it
+					// is never written to a generated file (spec 04 §7.5).
 					if r.cred == resource.CredGenerated {
-						pw, err := secrets.RandomPassword(24)
-						if err != nil {
-							return err
-						}
-						if res.Params == nil {
-							res.Params = map[string]any{}
-						}
 						if _, set := res.Params["password"]; !set {
+							pw, err := secrets.RandomPassword(24)
+							if err != nil {
+								return err
+							}
+							if res.Params == nil {
+								res.Params = map[string]any{}
+							}
 							res.Params["password"] = pw
+							if err := pushGeneratedCred(ctx, d, res, pw); err != nil {
+								return err
+							}
 						}
 					}
 					params := d.Model.Workspace.Shared[r.instance].Params
