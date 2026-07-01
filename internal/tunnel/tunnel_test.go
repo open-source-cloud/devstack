@@ -126,3 +126,46 @@ func TestSecretBearing(t *testing.T) {
 		t.Errorf("no secrets → empty")
 	}
 }
+
+func TestUpBuildsManagedContainer(t *testing.T) {
+	fr := have("docker")
+	tr := &Tunnel{Runner: fr}
+	err := tr.Up(context.Background(), UpOptions{
+		Name: "shop", ConfigPath: "/ws/.devstack/tunnel/config.yml",
+		CredsDir: "/home/u/.cloudflared", Network: "devstack_shared", Detach: true,
+	})
+	if err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	call := fr.calls[len(fr.calls)-1]
+	for _, want := range []string{
+		"docker run", "--name devstack-tunnel", "-d",
+		"--network devstack_shared",
+		"/home/u/.cloudflared:/home/nonroot/.cloudflared:ro",
+		"/ws/.devstack/tunnel/config.yml:/etc/cloudflared/config.yml:ro",
+		"tunnel --config /etc/cloudflared/config.yml run shop",
+	} {
+		if !strings.Contains(call, want) {
+			t.Errorf("up call missing %q:\n%s", want, call)
+		}
+	}
+}
+
+func TestUpRequiresDocker(t *testing.T) {
+	tr := &Tunnel{Runner: have()} // no docker
+	if err := tr.Up(context.Background(), UpOptions{Name: "shop"}); err == nil {
+		t.Error("up without docker should error")
+	}
+}
+
+func TestDownRemovesContainer(t *testing.T) {
+	fr := have("docker")
+	tr := &Tunnel{Runner: fr}
+	if err := tr.Down(context.Background()); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	call := fr.calls[len(fr.calls)-1]
+	if !strings.Contains(call, "docker rm -f devstack-tunnel") {
+		t.Errorf("down should `docker rm -f devstack-tunnel`: %s", call)
+	}
+}

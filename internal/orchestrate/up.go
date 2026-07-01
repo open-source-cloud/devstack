@@ -60,7 +60,9 @@ type UpDeps struct {
 	// the pgx-backed default. Injected for tests (so provisioning runs daemon-free).
 	PgConnect PgConnector
 
-	Build         bool          // compose up --build
+	Build         bool          // compose up --build (honors the generate ledger's selective-rebuild hash)
+	Rebuild       bool          // force `compose build --no-cache` before up (spec 26 --rebuild)
+	SkipClone     bool          // skip the clone/sync phase for repos already on disk (spec 26 --skip-clone)
 	NoHooks       bool          // skip the hooks phase
 	NoPreflight   bool          // skip the preflight phase (fast inner loops)
 	NoProvision   bool          // skip the per-project Postgres provision phase
@@ -458,8 +460,10 @@ func composeUpPhase(d UpDeps, project string, secretEnv map[string][]string, ser
 		},
 		Run: func(ctx context.Context) (any, error) {
 			c := cp()
-			if d.Build {
-				if err := c.Build(ctx, false, services...); err != nil {
+			// --rebuild forces a no-cache build (ignoring the selective-rebuild hash);
+			// --build does a normal build. --rebuild implies a build even without --build.
+			if d.Build || d.Rebuild {
+				if err := c.Build(ctx, d.Rebuild, services...); err != nil {
 					return nil, err
 				}
 			}

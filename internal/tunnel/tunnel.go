@@ -77,6 +77,72 @@ func (t *Tunnel) Run(ctx context.Context, configPath string) error {
 	return t.exec(ctx, "tunnel", "--config", configPath, "run")
 }
 
+// ContainerName is the managed cloudflared container `tunnel up` runs (spec 05).
+// A single well-known name makes `tunnel down` a stateless `docker rm -f`.
+const ContainerName = "devstack-tunnel"
+
+// DefaultImage is the cloudflared image the managed tunnel container runs.
+const DefaultImage = "cloudflare/cloudflared:latest"
+
+// UpOptions parameterize bringing the managed tunnel container up.
+type UpOptions struct {
+	Name       string // tunnel name (from `tunnel create`)
+	ConfigPath string // host path to the rendered ingress config.yml
+	CredsDir   string // host dir holding cert.pem + <uuid>.json (default ~/.cloudflared)
+	Network    string // shared Docker network the container joins (reaches the proxy)
+	Image      string // override the cloudflared image
+	Detach     bool   // run detached (default true for a managed container)
+}
+
+// Up runs the managed cloudflared container against the shared stack, mounting the
+// rendered ingress config + the user's cloudflared credentials. It is the single
+// code path a saga-wired tunnel would share (the secret:// refusal guard lives in
+// the caller, spec 05). Reversible: `Down` removes the container, leaving
+// credentials/routes intact. Requires the `docker` binary on PATH.
+func (t *Tunnel) Up(ctx context.Context, opts UpOptions) error {
+	if _, err := t.runner().LookPath("docker"); err != nil {
+		return fmt.Errorf("docker not found on PATH — required to run the managed tunnel container")
+	}
+	image := opts.Image
+	if image == "" {
+		image = DefaultImage
+	}
+	args := []string{"run", "--name", ContainerName, "--rm=false"}
+	if opts.Detach {
+		args = append(args, "-d")
+	}
+	if opts.Network != "" {
+		args = append(args, "--network", opts.Network)
+	}
+	if opts.CredsDir != "" {
+		args = append(args, "-v", opts.CredsDir+":/home/nonroot/.cloudflared:ro")
+	}
+	if opts.ConfigPath != "" {
+		args = append(args, "-v", opts.ConfigPath+":/etc/cloudflared/config.yml:ro")
+	}
+	args = append(args, image, "tunnel", "--config", "/etc/cloudflared/config.yml", "run")
+	if opts.Name != "" {
+		args = append(args, opts.Name)
+	}
+	if err := t.runner().Run(ctx, "docker", args...); err != nil {
+		return fmt.Errorf("start managed tunnel container: %w", err)
+	}
+	return nil
+}
+
+// Down stops and removes the managed tunnel container. Credentials and DNS routes
+// are left intact (reversible — `Up` brings it back). A missing container is not
+// an error (idempotent teardown).
+func (t *Tunnel) Down(ctx context.Context) error {
+	if _, err := t.runner().LookPath("docker"); err != nil {
+		return fmt.Errorf("docker not found on PATH — required to stop the managed tunnel container")
+	}
+	// `rm -f` both stops and removes; ignore a "no such container" outcome so
+	// `tunnel down` is idempotent.
+	_ = t.runner().Run(ctx, "docker", "rm", "-f", ContainerName)
+	return nil
+}
+
 func (t *Tunnel) exec(ctx context.Context, args ...string) error {
 	if !t.Available() {
 		return fmt.Errorf("cloudflared not found on PATH — install it (https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) and run `devstack tunnel login`")

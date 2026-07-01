@@ -20,6 +20,8 @@ import (
 // Options tune an Update.
 type Options struct {
 	Version string // pin a release tag (e.g. "v0.2.0"); "" = latest
+	Force   bool   // re-install even when already up-to-date (repair a corrupt binary);
+	// NEVER overrides the package-manager CanSelfReplace refusal (spec 26/14).
 }
 
 // Result reports what Update did (or why it refused).
@@ -55,8 +57,9 @@ func Update(ctx context.Context, current string, opts Options) (*Result, error) 
 	res.To = tag
 
 	// Nothing to do when already on (or ahead of) the latest, unless a specific
-	// version was pinned or this is an uncomparable dev build.
-	if opts.Version == "" && !IsDevBuild(current) && semver.IsValid(tag) && semver.Compare(tag, current) <= 0 {
+	// version was pinned, this is an uncomparable dev build, or --force asks to
+	// re-install over an up-to-date binary (repair a corrupt/partial install).
+	if upToDate(current, tag, opts) {
 		res.UpToDate = true
 		return res, nil
 	}
@@ -70,6 +73,21 @@ func Update(ctx context.Context, current string, opts Options) (*Result, error) 
 	}
 	res.Replaced = true
 	return res, nil
+}
+
+// upToDate decides whether Update should short-circuit as a no-op: the running
+// binary is already on (or ahead of) the resolved tag. --force, a pinned
+// --version, and an uncomparable dev build all defeat the short-circuit so the
+// resolved release is (re-)installed. --force NEVER bypasses the earlier
+// CanSelfReplace refusal for package-managed installs (that check runs first).
+func upToDate(current, tag string, opts Options) bool {
+	if opts.Force || opts.Version != "" {
+		return false
+	}
+	if IsDevBuild(current) {
+		return false
+	}
+	return semver.IsValid(tag) && semver.Compare(tag, current) <= 0
 }
 
 // assetName is the release archive for an os/arch (goreleaser strips the leading

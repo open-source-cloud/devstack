@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -26,11 +27,14 @@ import (
 // shared(health-gated) → compose-up → hooks, resumable and compensating.
 func newUpCmd(g *GlobalOpts) *cobra.Command {
 	var (
-		build       bool
-		noHooks     bool
-		noPreflight bool
-		noProvision bool
-		profiles    []string
+		build         bool
+		rebuild       bool
+		skipClone     bool
+		noHooks       bool
+		noPreflight   bool
+		noProvision   bool
+		profiles      []string
+		healthTimeout time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:   "up [project...]",
@@ -47,10 +51,13 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 			defer closeFn()
 			d.Projects = args
 			d.Build = build
+			d.Rebuild = rebuild
+			d.SkipClone = skipClone
 			d.NoHooks = noHooks
 			d.NoPreflight = noPreflight
 			d.NoProvision = noProvision
 			d.Profiles = profiles
+			d.HealthTimeout = healthTimeout
 
 			// Memory-budget warning (spec 12 §budget): opt-in — only when the
 			// workspace declares memoryBudgetMB and the active slice exceeds it. Never
@@ -78,6 +85,15 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 			}
 			records, runErr := saga.Run(cmd.Context(), phases)
 
+			// Register this workspace in the machine-wide registry (spec 26) so
+			// `workspace list` can enumerate it. Written under the flock on a
+			// successful up; best-effort — a registry write must never fail the up.
+			if runErr == nil {
+				_ = lock.WithLock(cmd.Context(), d.LockPath, func() error {
+					return d.DB.RecordWorkspace(d.Model.Workspace.Name, d.Model.Root)
+				})
+			}
+
 			if g.JSON {
 				if err := writeJSON(cmd, records); err != nil {
 					return err
@@ -90,6 +106,9 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&build, "build", false, "build images before starting (compose build)")
+	cmd.Flags().BoolVar(&rebuild, "rebuild", false, "force a no-cache image rebuild before starting (compose build --no-cache)")
+	cmd.Flags().BoolVar(&skipClone, "skip-clone", false, "skip the clone/sync phase (repos are already on disk)")
+	cmd.Flags().DurationVar(&healthTimeout, "health-timeout", 0, "per-shared-service readiness deadline (0 → spec-10 default)")
 	cmd.Flags().BoolVar(&noHooks, "no-hooks", false, "skip lifecycle hooks")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, "skip the preflight checks")
 	cmd.Flags().BoolVar(&noProvision, "no-provision", false, "skip per-project Postgres role/db provisioning")

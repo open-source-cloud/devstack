@@ -74,6 +74,40 @@ func TestComposeBuildNoCache(t *testing.T) {
 	}
 }
 
+func TestComposeExecInteractive(t *testing.T) {
+	c, r := newTestCompose()
+	// A login shell: interactive → -it, then the service, then the command.
+	if err := c.Exec(context.Background(), "web", true, "bash"); err != nil {
+		t.Fatal(err)
+	}
+	want := "docker compose -p devstack-api -f /ws/.devstack/docker-compose.yaml exec -it web bash"
+	if got := r.last(); got != want {
+		t.Errorf("interactive exec = %q, want %q", got, want)
+	}
+}
+
+func TestComposeExecNonInteractive(t *testing.T) {
+	c, r := newTestCompose()
+	// Non-interactive → -T (no TTY) so a piped caller never hangs.
+	if err := c.Exec(context.Background(), "web", false, "psql", "-c", "select 1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.last(); !strings.Contains(got, "exec -T web psql -c select 1") {
+		t.Errorf("non-interactive exec = %q", got)
+	}
+	if strings.Contains(r.last(), "-it") {
+		t.Errorf("non-interactive exec must not request a TTY: %q", r.last())
+	}
+}
+
+func TestInteractiveRunnerOutputUnsupported(t *testing.T) {
+	// The interactive runner captures nothing — Output must be a clear error, not
+	// silent empty bytes.
+	if _, err := (InteractiveRunner{}).Output(context.Background(), nil, "", "docker"); err == nil {
+		t.Error("InteractiveRunner.Output should return an error")
+	}
+}
+
 func TestCmdErrorMessage(t *testing.T) {
 	e := &CmdError{Cmd: "docker compose up", Stderr: "network not found", Err: context.Canceled}
 	if !strings.Contains(e.Error(), "network not found") || !strings.Contains(e.Error(), "docker compose up") {
