@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -76,6 +77,15 @@ func TestStatusCANotInstalled(t *testing.T) {
 	}
 	if s.OK() {
 		t.Error("CA not installed → not OK")
+	}
+	// The remediation must NOT tell the user to `sudo devstack trust install`:
+	// running the whole CLI as root misplaces mkcert's CAROOT and isn't on sudo's
+	// secure_path. It runs as the user; mkcert self-elevates for the system store.
+	if strings.Contains(s.Remediation, "sudo devstack") {
+		t.Errorf("remediation should not instruct `sudo devstack …`, got %q", s.Remediation)
+	}
+	if !strings.Contains(s.Remediation, "trust install") {
+		t.Errorf("remediation should point at `devstack trust install`, got %q", s.Remediation)
 	}
 }
 

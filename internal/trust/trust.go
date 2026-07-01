@@ -114,7 +114,11 @@ func (t *Trust) Status(ctx context.Context) Status {
 
 	switch {
 	case !s.CAInstalled:
-		s.Remediation = "run `sudo devstack trust install` to create + trust the local CA"
+		// NOT `sudo devstack …`: running the whole CLI as root puts mkcert's CAROOT
+		// in root's home (so later cert generation, run as you, can't find the CA),
+		// and a user-local install isn't on sudo's secure_path anyway. Run it as
+		// your user — mkcert self-elevates (its own sudo) only for the system store.
+		s.Remediation = "run `devstack trust install` (as your user, not sudo) to create + trust the local CA"
 	case !s.FirefoxTrust:
 		s.Remediation = "install certutil for Firefox/NSS trust: `apt install libnss3-tools` (Debian/Ubuntu)"
 	case s.WSL:
@@ -138,6 +142,11 @@ func (execRunner) Output(ctx context.Context, name string, args ...string) ([]by
 }
 func (execRunner) Run(ctx context.Context, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
+	// Wire stdin, not just stdout/stderr: `mkcert -install` self-elevates with its
+	// own `sudo` for the system trust store, and that sudo must be able to prompt
+	// for a password on the terminal. Without stdin the child reads /dev/null and
+	// the system-store step fails silently.
+	cmd.Stdin = os.Stdin
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }

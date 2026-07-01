@@ -488,7 +488,7 @@ func (s *doctorSession) dnsProbe() (probe, bool) {
 	if err != nil {
 		c.Status = docker.StatusWarn
 		c.Detail = err.Error()
-		c.Remediation = "run `sudo devstack dns setup`"
+		c.Remediation = fmt.Sprintf("run `%s`", sudoSelfCmd("dns setup"))
 		return plain(c), true
 	}
 	if len(missing) == 0 {
@@ -498,8 +498,21 @@ func (s *doctorSession) dnsProbe() (probe, bool) {
 	}
 	c.Status = docker.StatusWarn
 	c.Detail = fmt.Sprintf("%d of %d *.localhost host(s) missing", len(missing), len(hosts))
-	c.Remediation = "run `sudo devstack dns setup` (a marker-fenced /etc/hosts write needs root)"
+	c.Remediation = fmt.Sprintf("run `%s` (a marker-fenced /etc/hosts write needs root)", sudoSelfCmd("dns setup"))
 	return plain(c), true
+}
+
+// sudoSelfCmd renders a copy-pasteable "sudo <abs-binary> <sub>" remediation.
+// The ABSOLUTE path is load-bearing: sudo resets PATH to its secure_path (which
+// on most systems excludes ~/.local/bin), so a bare `sudo devstack …` fails with
+// "command not found" for a user-local install. os.Executable() resolves the
+// real running binary; it falls back to the bare name only if that lookup fails.
+func sudoSelfCmd(sub string) string {
+	exe, err := os.Executable()
+	if err != nil || exe == "" {
+		exe = "devstack"
+	}
+	return fmt.Sprintf("sudo %s %s", exe, sub)
 }
 
 // trustProbe reports local-CA readiness. Diagnose-only: driving mkcert/NSS
