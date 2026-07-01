@@ -1,0 +1,40 @@
+schemaVersion: 1
+description: "Shared LocalStack AWS-emulation engine, reached over the shared network at shared-localstack:4566."
+provides: aws
+exports: [host, port, endpoint, region]
+defaultPort: 4566
+params:
+  image:
+    type: string
+    default: "localstack/localstack:3"
+    description: "LocalStack community image; pin a major for (engine,major) ledger keying."
+  services:
+    type: string
+    default: "s3,sqs,sns,kinesis,dynamodb"
+    description: "Comma list for the SERVICES env (lazy-loads only these for fast, light startup)."
+  region:
+    type: string
+    default: "us-east-1"
+    description: "Default AWS region advertised to in-network consumers (the region export)."
+
+service:
+  image: "[[ .params.image ]]"
+  restart: unless-stopped
+  environment:
+    SERVICES: "[[ .params.services ]]"
+    DEBUG: "0"
+    AWS_DEFAULT_REGION: "[[ .params.region ]]"
+    # Community persistence is best-effort; treat LocalStack data as recreatable.
+    PERSISTENCE: "1"
+  volumes:
+    - "localstackdata:/var/lib/localstack"
+  healthcheck:
+    # /_localstack/health reports per-service readiness; gate on the edge being up.
+    test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health | grep -q running"]
+    interval: 10s
+    timeout: 5s
+    retries: 8
+    start_period: 20s
+
+volumes:
+  localstackdata: {}

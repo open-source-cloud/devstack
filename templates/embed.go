@@ -7,7 +7,7 @@ package templates
 
 import "embed"
 
-//go:embed all:postgres all:redis all:minio all:php.nginx all:php.laravel.nginx all:node.vite
+//go:embed all:postgres all:redis all:minio all:php.nginx all:php.laravel.nginx all:node.vite all:localstack all:nats all:kafka all:rabbitmq
 var builtinFS embed.FS
 
 // FS is the embedded built-in templates root: template-name directories at the

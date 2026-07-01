@@ -76,11 +76,32 @@ func (r *graphResolver) refAttr(ref config.Reference) (string, error) {
 	}
 }
 
+// defaultAWSRegion is the region advertised when a shared AWS-emulation engine
+// (LocalStack/ministack) declares no `region` param (spec 28).
+const defaultAWSRegion = "us-east-1"
+
+// secondaryPorts maps a shared engine's template name to its non-default
+// (secondary) export attrs and the in-network container port each resolves to
+// (spec 28 Q-SECONDARY-PORTS). The resolver tracks only one in-network port per
+// shared service (sharedPort); these extra admin/monitor/mgmt ports are static
+// per the template's declared service command and resolved from this lookup so a
+// consumer's ${ref:...<engine>.monitorPort} resolves without a hardcode in the
+// generic sharedAttr switch.
+var secondaryPorts = map[string]map[string]int{
+	"nats":     {"monitorport": 8222},
+	"kafka":    {"adminport": 9644},
+	"rabbitmq": {"mgmtport": 15672},
+}
+
 // sharedAttr resolves an attribute of a shared service. host/port are stable
 // (DNS alias + the engine's default port); user/database default to the CONSUMER
 // project name — the per-project role/db provisioned on the shared engine in M2.
+// endpoint/region (AWS-emulation engines) and the per-engine secondary admin/
+// monitor/mgmt ports are non-secret extras resolved from the alias, the default
+// port, the `region` param, and the static secondaryPorts lookup (spec 28).
 func (r *graphResolver) sharedAttr(name, attr string) (string, error) {
-	if _, ok := r.model.Workspace.Shared[name]; !ok {
+	svc, ok := r.model.Workspace.Shared[name]
+	if !ok {
 		return "", fmt.Errorf("shared service %q does not exist%s", name, suggestShared(r.model))
 	}
 	switch attr {
@@ -91,11 +112,27 @@ func (r *graphResolver) sharedAttr(name, attr string) (string, error) {
 			return strconv.Itoa(p), nil
 		}
 		return "", fmt.Errorf("shared service %q exposes no default port", name)
+	case "endpoint":
+		p := r.sharedPort[name]
+		if p == 0 {
+			return "", fmt.Errorf("shared service %q exposes no default port for its endpoint", name)
+		}
+		return fmt.Sprintf("http://%s:%d", sharedAlias(name), p), nil
+	case "region":
+		if v, ok := svc.Params["region"].(string); ok && v != "" {
+			return v, nil
+		}
+		return defaultAWSRegion, nil
 	case "user", "accesskey":
 		return r.curProject, nil
 	case "database", "db":
 		return r.curProject, nil
 	default:
+		if ports, ok := secondaryPorts[svc.Template]; ok {
+			if p, ok := ports[attr]; ok {
+				return strconv.Itoa(p), nil
+			}
+		}
 		return "", fmt.Errorf("unknown attribute %q on shared service %q", attr, name)
 	}
 }

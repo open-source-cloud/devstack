@@ -1,0 +1,29 @@
+name: devstack-lint
+services:
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_PASS: null
+      RABBITMQ_DEFAULT_USER: devstack
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - rabbitmq-diagnostics -q ping
+      timeout: 10s
+      interval: 15s
+      retries: 5
+      start_period: 30s
+    image: rabbitmq:3-management
+    networks:
+      default: null
+    restart: unless-stopped
+    volumes:
+      - type: volume
+        source: rabbitmqdata
+        target: /var/lib/rabbitmq
+        volume: {}
+networks:
+  default:
+    name: devstack-lint_default
+volumes:
+  rabbitmqdata:
+    name: devstack-lint_rabbitmqdata
