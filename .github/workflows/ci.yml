@@ -101,7 +101,10 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --snapshot --clean
+          # --skip=sign: the dry-run validates build/archive/package config only.
+          # Signing is keyless cosign over GitHub OIDC (release.yml) and cannot run
+          # in a PR dry-run (no cosign binary, no id-token) — the real release signs.
+          args: release --snapshot --clean --skip=sign
 
   # Native macOS arm64 lane (G2): proves the darwin/arm64 RUNTIME target — not just
   # the cross-compile on the Linux lane — actually builds and passes its daemon-free

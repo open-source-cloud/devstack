@@ -94,21 +94,24 @@ func TestReplaceExecutableAtomic(t *testing.T) {
 	}
 }
 
-// releaseServer mimics the GitHub API release-by-tag + asset endpoints: the
-// tags endpoint returns assets whose URLs point back at this server.
+// releaseServer mimics the GitHub API release-by-tag + asset endpoints: the tags
+// endpoint returns the archive, checksums.txt, and (keyless-signing) the
+// checksums.txt.sig + checksums.txt.pem assets, all pointing back at this server.
 func releaseServer(t *testing.T, tag string, archive []byte, sum string) (*httptest.Server, func()) {
 	t.Helper()
 	asset := assetName(tag, runtime.GOOS, runtime.GOARCH)
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
 	mux.HandleFunc("/releases/tags/"+tag, func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `{"assets":[{"name":%q,"url":%q},{"name":"checksums.txt","url":%q}]}`,
-			asset, srv.URL+"/asset/archive", srv.URL+"/asset/sums")
+		fmt.Fprintf(w, `{"assets":[{"name":%q,"url":%q},{"name":"checksums.txt","url":%q},{"name":"checksums.txt.sig","url":%q},{"name":"checksums.txt.pem","url":%q}]}`,
+			asset, srv.URL+"/asset/archive", srv.URL+"/asset/sums", srv.URL+"/asset/sig", srv.URL+"/asset/pem")
 	})
 	mux.HandleFunc("/asset/archive", func(w http.ResponseWriter, _ *http.Request) { w.Write(archive) })
 	mux.HandleFunc("/asset/sums", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, "%s  %s\n", sum, asset)
 	})
+	mux.HandleFunc("/asset/sig", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "FAKE-SIGNATURE") })
+	mux.HandleFunc("/asset/pem", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "FAKE-CERT") })
 	old := APIBase
 	APIBase = srv.URL
 	return srv, func() { APIBase = old; srv.Close() }
@@ -119,7 +122,7 @@ func TestDownloadBinaryVerifies(t *testing.T) {
 	_, cleanup := releaseServer(t, "v0.2.0", archive, sum)
 	defer cleanup()
 
-	bin, err := downloadBinary(context.Background(), "v0.2.0", runtime.GOOS, runtime.GOARCH)
+	bin, err := downloadBinary(context.Background(), "v0.2.0", runtime.GOOS, runtime.GOARCH, okVerifier{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +136,7 @@ func TestDownloadBinaryChecksumMismatchAborts(t *testing.T) {
 	_, cleanup := releaseServer(t, "v0.2.0", archive, "0000000000000000000000000000000000000000000000000000000000000000")
 	defer cleanup()
 
-	if _, err := downloadBinary(context.Background(), "v0.2.0", runtime.GOOS, runtime.GOARCH); err == nil {
+	if _, err := downloadBinary(context.Background(), "v0.2.0", runtime.GOOS, runtime.GOARCH, okVerifier{}, false); err == nil {
 		t.Fatal("want a checksum-mismatch error, got nil")
 	}
 }
