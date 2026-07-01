@@ -117,6 +117,7 @@ func (m *mobyClient) ContainerInspect(ctx context.Context, id string) (Container
 	}
 	if c.Config != nil {
 		d.Labels = c.Config.Labels
+		d.TTY = c.Config.Tty
 	}
 	if c.State != nil {
 		d.State = string(c.State.Status)
