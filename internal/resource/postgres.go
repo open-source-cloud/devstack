@@ -63,11 +63,59 @@ func (Postgres) password(r Resource) string {
 	return r.Owner
 }
 
-// Ensure idempotently provisions the role+database for the resource, wrapping
-// provision.EnsureProject (the identity defaults to the owner project, matching
-// the implicit up-time provisioning byte-for-byte). Returns the connection facts;
-// the secret password is included so callers can surface/mask it.
+// rolePassword resolves a role/user credential: an explicit generated value when
+// present, else the predictable dev cred (== the role NAME, spec 29 §db user).
+func (Postgres) rolePassword(r Resource, role string) string {
+	if v, ok := r.Params["password"].(string); ok && v != "" {
+		return v
+	}
+	return role
+}
+
+// paramStr reads a string param (empty when absent or non-string).
+func paramStr(params map[string]any, key string) string {
+	if v, ok := params[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// dsnDB builds the admin DSN for the target instance, connected to database db
+// (falling back to the admin database when db is empty). Used by the role/user
+// path so schema/table grants land on the tenant database, not the admin one.
+func (Postgres) dsnDB(t Target, db string) string {
+	user := t.AdminEnv["user"]
+	pass := t.AdminEnv["password"]
+	if db == "" {
+		db = t.AdminEnv["database"]
+		if db == "" {
+			db = user
+		}
+	}
+	return provision.DSN(t.Host, t.Port, user, pass, db)
+}
+
+// Ensure idempotently provisions the resource. Dispatch by kind:
+//
+//   - role|user: a tenant-scoped LOGIN role, optionally GRANTed on a target
+//     database (Params["db"] + Params["level"]); nothing else is created.
+//   - database with Params["owner"]: just CREATE DATABASE … OWNER <owner> (the
+//     owner is an existing role, typically the project) — `db create <name>`.
+//   - database (no owner): the legacy role+database pair via EnsureProject (the
+//     `resource create postgres database` substrate behaviour, byte-for-byte).
+//
+// Returns the connection facts; the secret password is included so callers mask it.
 func (p Postgres) Ensure(ctx context.Context, t Target, r Resource) (Attrs, error) {
+	switch r.Kind {
+	case "role", "user":
+		return p.ensureRole(ctx, t, r)
+	case "database":
+		if owner := paramStr(r.Params, "owner"); owner != "" {
+			return p.ensureDatabase(ctx, t, r, owner)
+		}
+	}
 	identity := r.Name
 	if identity == "" {
 		identity = r.Owner
@@ -91,6 +139,82 @@ func (p Postgres) Ensure(ctx context.Context, t Target, r Resource) (Attrs, erro
 		"database": creds.Database,
 		"password": creds.Password,
 	}, nil
+}
+
+// ensureDatabase creates just a database owned by an existing role (no new role),
+// so `db create orders` on project api yields `api_orders OWNER api`. It returns no
+// "role" attr, so the caller records only the database ownership row.
+func (p Postgres) ensureDatabase(ctx context.Context, t Target, r Resource, owner string) (Attrs, error) {
+	db := r.Name
+	if db == "" {
+		db = r.Owner
+	}
+	conn, closeConn, err := p.connect(ctx, p.dsn(t))
+	if err != nil {
+		return nil, fmt.Errorf("connect to shared %s on %s:%d: %w", t.Instance, t.Host, t.Port, err)
+	}
+	defer func() { _ = closeConn() }()
+
+	dbIdent, err := provision.Postgres{}.EnsureDatabase(ctx, conn, db, owner)
+	if err != nil {
+		return nil, err
+	}
+	return Attrs{
+		"host":     sharedHost(t.Instance),
+		"port":     "5432",
+		"user":     pgIdent(owner),
+		"database": dbIdent,
+		"owner":    pgIdent(owner),
+		"password": owner, // predictable dev-cred == owner project name
+	}, nil
+}
+
+// ensureRole creates a tenant-scoped LOGIN role (existence-guarded), optionally
+// granting it a privilege tier on a target database. When Params["grant_only"] is
+// set the role is assumed to exist (`db grant`) and only the GRANT runs — the
+// password is never reset. Connects to the target database so schema/table grants
+// land on the right database, not the admin one.
+func (p Postgres) ensureRole(ctx context.Context, t Target, r Resource) (Attrs, error) {
+	role := r.Name
+	if role == "" {
+		role = r.Owner
+	}
+	db := paramStr(r.Params, "db")
+	conn, closeConn, err := p.connect(ctx, p.dsnDB(t, db))
+	if err != nil {
+		return nil, fmt.Errorf("connect to shared %s on %s:%d: %w", t.Instance, t.Host, t.Port, err)
+	}
+	defer func() { _ = closeConn() }()
+
+	pass := p.rolePassword(r, role)
+	roleIdent := pgIdent(role)
+	grantOnly := paramStr(r.Params, "grant_only") != ""
+	if !grantOnly {
+		roleIdent, err = (provision.Postgres{}).EnsureRole(ctx, conn, role, pass)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if db != "" {
+		level := provision.GrantLevel(paramStr(r.Params, "level"))
+		if level == "" {
+			level = provision.GrantRead
+		}
+		if err := (provision.Postgres{}).Grant(ctx, conn, role, db, level); err != nil {
+			return nil, err
+		}
+	}
+	attrs := Attrs{
+		"host":     sharedHost(t.Instance),
+		"port":     "5432",
+		"user":     roleIdent,
+		"role":     roleIdent,
+		"password": pass,
+	}
+	if db != "" {
+		attrs["database"] = pgIdent(db)
+	}
+	return attrs, nil
 }
 
 // Drop removes the resource's database and/or role, guarded so it is idempotent

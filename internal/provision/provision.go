@@ -84,6 +84,101 @@ func (Postgres) EnsureProject(ctx context.Context, conn Conn, project, password 
 	return Credentials{Role: role, Database: db, Password: password}, nil
 }
 
+// GrantLevel is the privilege tier a role receives on a database (spec 29 §db
+// role/grant). read = SELECT; write = +INSERT/UPDATE/DELETE; admin = ALL.
+type GrantLevel string
+
+const (
+	// GrantRead grants CONNECT + USAGE + SELECT (a reporting/read-replica role).
+	GrantRead GrantLevel = "read"
+	// GrantWrite grants read + INSERT/UPDATE/DELETE (an application role).
+	GrantWrite GrantLevel = "write"
+	// GrantAdmin grants ALL on the database + schema (an owner-equivalent role).
+	GrantAdmin GrantLevel = "admin"
+)
+
+// EnsureRole idempotently ensures a LOGIN role exists with the given password,
+// keeping the password in sync on re-run. Existence-guarded because CREATE ROLE is
+// not idempotent (DECISIONS D8); the SQL runs under the caller's flock. Returns the
+// sanitized role identifier (hyphens → underscores).
+func (Postgres) EnsureRole(ctx context.Context, conn Conn, role, password string) (string, error) {
+	r := pgIdent(role)
+	exists, err := conn.Exists(ctx, `SELECT 1 FROM pg_roles WHERE rolname = $1`, r)
+	if err != nil {
+		return "", fmt.Errorf("check role %q: %w", r, err)
+	}
+	if exists {
+		if err := conn.Exec(ctx, `ALTER ROLE `+quoteIdent(r)+` WITH LOGIN PASSWORD `+quoteLiteral(password)); err != nil {
+			return "", fmt.Errorf("alter role %q: %w", r, err)
+		}
+	} else {
+		if err := conn.Exec(ctx, `CREATE ROLE `+quoteIdent(r)+` WITH LOGIN PASSWORD `+quoteLiteral(password)); err != nil {
+			return "", fmt.Errorf("create role %q: %w", r, err)
+		}
+	}
+	return r, nil
+}
+
+// EnsureDatabase idempotently ensures database db exists, owned by ownerRole.
+// Existence-guarded (CREATE DATABASE is not idempotent and cannot run in a
+// transaction). Unlike EnsureProject it creates NO new role — the owner is an
+// existing role (typically the project role), matching `db create <name>` where
+// the owner is the project (spec 29). Returns the sanitized database identifier.
+func (Postgres) EnsureDatabase(ctx context.Context, conn Conn, db, ownerRole string) (string, error) {
+	d := pgIdent(db)
+	owner := pgIdent(ownerRole)
+	exists, err := conn.Exists(ctx, `SELECT 1 FROM pg_database WHERE datname = $1`, d)
+	if err != nil {
+		return "", fmt.Errorf("check database %q: %w", d, err)
+	}
+	if !exists {
+		if err := conn.Exec(ctx, `CREATE DATABASE `+quoteIdent(d)+` OWNER `+quoteIdent(owner)); err != nil {
+			return "", fmt.Errorf("create database %q: %w", d, err)
+		}
+	}
+	return d, nil
+}
+
+// Grant applies a privilege tier to role on database db. GRANT is idempotent so
+// this is safe to re-run. The schema/table grants apply to the CURRENTLY-CONNECTED
+// database's public schema, so the caller must connect to db before calling Grant
+// (the resource.Postgres provisioner does). The database-level CONNECT/ALL grants
+// apply regardless of the connected database.
+func (Postgres) Grant(ctx context.Context, conn Conn, role, db string, level GrantLevel) error {
+	r := quoteIdent(pgIdent(role))
+	d := quoteIdent(pgIdent(db))
+	stmts := []string{`GRANT CONNECT ON DATABASE ` + d + ` TO ` + r}
+	switch level {
+	case GrantRead:
+		stmts = append(stmts,
+			`GRANT USAGE ON SCHEMA public TO `+r,
+			`GRANT SELECT ON ALL TABLES IN SCHEMA public TO `+r,
+			`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO `+r,
+		)
+	case GrantWrite:
+		stmts = append(stmts,
+			`GRANT USAGE ON SCHEMA public TO `+r,
+			`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO `+r,
+			`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO `+r,
+		)
+	case GrantAdmin:
+		stmts = append(stmts,
+			`GRANT ALL PRIVILEGES ON DATABASE `+d+` TO `+r,
+			`GRANT ALL ON SCHEMA public TO `+r,
+			`GRANT ALL ON ALL TABLES IN SCHEMA public TO `+r,
+			`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO `+r,
+		)
+	default:
+		return fmt.Errorf("unknown grant level %q (want read|write|admin)", level)
+	}
+	for _, s := range stmts {
+		if err := conn.Exec(ctx, s); err != nil {
+			return fmt.Errorf("grant %s on %q to %q: %w", level, db, role, err)
+		}
+	}
+	return nil
+}
+
 // pgIdent maps a (dsname-validated) project name to a safe unquoted-friendly
 // Postgres identifier: hyphens become underscores. The result is still quoted at
 // use so any residual characters are handled.
