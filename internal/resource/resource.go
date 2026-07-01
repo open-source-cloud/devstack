@@ -72,12 +72,14 @@ type Provisioner interface {
 // without a live connection. Engines absent here are forward-tolerant (unknown →
 // no kind check; the config resolver only enforces membership for known engines).
 var supportedKinds = map[string][]string{
-	"postgres":   {"database", "role", "user"},
-	"redis":      {"redis_index", "acl_user"},
-	"minio":      {"bucket", "lifecycle", "access_key"},
+	"postgres": {"database", "role", "user"},
+	"redis":    {"redis_index", "acl_user", "queue", "topic"},
+	"minio":    {"bucket", "lifecycle", "access_key"},
+	// The localstack template (`provides: aws`) backs SQS queues + SNS topics; the
+	// provisioner is keyed by the template name "localstack".
 	"localstack": {"bucket", "queue", "topic", "stream", "table"},
-	"nats":       {"stream", "consumer", "kv"},
-	"kafka":      {"topic", "acl"},
+	"nats":       {"stream", "consumer", "kv", "queue", "topic"},
+	"kafka":      {"topic", "acl", "stream"},
 }
 
 // Kinds returns the kinds a given engine's provisioner can create, or nil if the

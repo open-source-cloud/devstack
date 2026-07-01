@@ -41,10 +41,15 @@ func ResolveInstance(m *config.Model, engine string) (string, bool) {
 // instance's params don't set rootUser/rootPassword (matching the engine
 // templates: postgres → devstack, minio → devstackadmin).
 func engineDefaultAdmin(engine string) string {
-	if engine == "minio" {
+	switch engine {
+	case "minio":
 		return "devstackadmin"
+	case "localstack":
+		// LocalStack accepts any credentials; the community convention is "test".
+		return "test"
+	default:
+		return "devstack"
 	}
-	return "devstack"
 }
 
 // engineTarget resolves the host-reachable admin endpoint for an instance: it

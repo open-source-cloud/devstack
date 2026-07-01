@@ -41,6 +41,16 @@ var engineOverlays = map[string]perEngineOverlay{
 	"postgres": {provisionPurpose, provisionPortBase, 5432},
 	"redis":    {"redis-provision", 46379, 6379},
 	"minio":    {"minio-provision", 49000, 9000},
+	"nats":     {"nats-provision", 44222, 4222},
+	// Kafka (Redpanda) advertises its EXTERNAL listener at a fixed 127.0.0.1:49092
+	// (template), so host clients must reach the broker on exactly that port — the
+	// overlay publishes the in-container external listener (19092) there. The port
+	// base is 49092 to match the advertised address (a mismatch breaks the Kafka
+	// bootstrap→redirect handshake, the #1 local-Kafka footgun).
+	"kafka": {"kafka-provision", 49092, 19092},
+	// LocalStack's edge port (4566) serves every AWS service (SQS/SNS/S3/…); keyed by
+	// the template name "localstack" (its `provides: aws` is reached on this port).
+	"localstack": {"localstack-provision", 44566, 4566},
 }
 
 // declaredKind reports whether a ledger kind is one the declarative resources
@@ -127,6 +137,10 @@ func buildRegistry(d UpDeps) *resource.Registry {
 	return resource.NewRegistry(
 		resource.Postgres{Connect: toResourceConnector(d.PgConnect)},
 		resource.MinIO{Factory: d.S3Factory},
+		resource.NATS{Factory: d.NatsFactory},
+		resource.Kafka{Factory: d.KafkaFactory},
+		resource.LocalStack{SQSFactory: d.SQSFactory, SNSFactory: d.SNSFactory},
+		resource.Redis{},
 	)
 }
 
