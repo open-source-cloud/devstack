@@ -171,6 +171,7 @@ type doctorSession struct {
 	model     *config.Model // nil when cwd is not a workspace
 	ctxName   string
 	lockPath  string
+	backend   docker.Backend // the resolved Docker backend (spec 21); zero = local
 }
 
 // openDoctorSession opens the docker client and state ledger once (best-effort)
@@ -187,7 +188,11 @@ func openDoctorSession(cmd *cobra.Command) (*doctorSession, func()) {
 	if m, err := config.Load(cwd); err == nil {
 		s.model = m
 	}
-	if c, err := docker.NewClient(ctx); err == nil {
+	// Resolve the Docker backend (spec 21) so doctor probes the endpoint the rest
+	// of the tool will actually target — a remote context/DOCKER_HOST when the
+	// workspace (or the store default) selects one, else the local daemon.
+	s.backend = backendFor(s.model)
+	if c, err := s.backend.NewClient(ctx); err == nil {
 		s.client = c
 		s.ctxName = c.ContextName()
 	} else {
@@ -206,6 +211,21 @@ func openDoctorSession(cmd *cobra.Command) (*doctorSession, func()) {
 			_ = s.client.Close()
 		}
 	}
+}
+
+// remoteBackendProbe returns the backend.remote reachability check (spec 21),
+// or ok=false for the local backend (nothing remote to probe — the docker-daemon
+// preflight already covers the local endpoint). Extracted so it is testable
+// without the full probe matrix (which needs a live ledger handle).
+func (s *doctorSession) remoteBackendProbe(ctx context.Context) (probe, bool) {
+	if !s.backend.IsRemote() {
+		return probe{}, false
+	}
+	c := s.backend.RemoteReachable(ctx, s.client)
+	if c.Name == "" {
+		return probe{}, false
+	}
+	return plain(withCategory(c, catCritical)), true
 }
 
 // manager builds a workspace.Manager over the session's shared handles. Reconcile
@@ -273,6 +293,13 @@ func (s *doctorSession) probes(ctx context.Context) []probe {
 		for _, c := range docker.Preflight(ctx, s.client) {
 			probes = append(probes, plain(withCategory(c, catCritical)))
 		}
+	}
+
+	// backend.remote — the configured remote backend is reachable (spec 21). Only
+	// emitted when a remote context/DOCKER_HOST is selected; the local backend adds
+	// nothing here (the docker-daemon preflight above already covers it).
+	if p, ok := s.remoteBackendProbe(ctx); ok {
+		probes = append(probes, p)
 	}
 
 	// state.ledger — the ledger opens/migrates cleanly (critical).

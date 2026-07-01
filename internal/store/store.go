@@ -88,6 +88,10 @@ type Config struct {
 	APIVersion string                      `yaml:"apiVersion"`
 	Kind       string                      `yaml:"kind"`
 	Shared     map[string]config.SharedSvc `yaml:"shared"`
+	// Backend is the machine-global default for WHERE the shared stack runs (spec
+	// 21): a `docker context` or DOCKER_HOST endpoint. nil = the local daemon. A
+	// workspace.yaml `backend:` block, when present, overrides this per workspace.
+	Backend *config.BackendConfig `yaml:"backend,omitempty"`
 	// Telemetry is the per-user/per-machine opt-in usage-telemetry consent
 	// (spec 20). It lives here — never in workspace.yaml (must not be committed)
 	// and never in state.db (it's user policy, not ledger state). Default OFF: a

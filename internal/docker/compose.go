@@ -101,7 +101,25 @@ type Compose struct {
 	Overrides []string // additional -f overlays, applied in order after File (up-time only)
 	Dir       string   // working dir (build contexts resolve relative to it)
 	Env       []string // extra env (resolved secrets), appended to os.Environ
-	Runner    Runner
+	// ContextEnv pins the compose CLI to a specific Docker backend/endpoint
+	// (DOCKER_HOST / DOCKER_CONTEXT), from Backend.ComposeEnv() (spec 21). Empty for
+	// the local backend. Kept separate from Env so a remote endpoint and resolved
+	// secrets compose cleanly; both are appended to the child env, never written to
+	// a file. ContextEnv is applied AFTER Env so the endpoint selection always wins.
+	ContextEnv []string
+	Runner     Runner
+}
+
+// env returns the extra environment the Runner appends to os.Environ for every
+// verb: the resolved-secret Env followed by the backend-selecting ContextEnv.
+func (c *Compose) env() []string {
+	if len(c.ContextEnv) == 0 {
+		return c.Env
+	}
+	out := make([]string, 0, len(c.Env)+len(c.ContextEnv))
+	out = append(out, c.Env...)
+	out = append(out, c.ContextEnv...)
+	return out
 }
 
 // NewCompose builds a Compose driver using the real exec runner.
@@ -131,7 +149,7 @@ func (c *Compose) base() []string {
 func (c *Compose) Up(ctx context.Context, services ...string) error {
 	args := append(c.base(), "up", "-d")
 	args = append(args, services...)
-	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
+	return c.Runner.Run(ctx, c.env(), c.Dir, "docker", args...)
 }
 
 // Down stops and removes the stack's containers (and its default network).
@@ -142,7 +160,7 @@ func (c *Compose) Down(ctx context.Context, volumes bool) error {
 	if volumes {
 		args = append(args, "--volumes")
 	}
-	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
+	return c.Runner.Run(ctx, c.env(), c.Dir, "docker", args...)
 }
 
 // Stop pauses the stack (or named services) without removing containers — used
@@ -150,7 +168,7 @@ func (c *Compose) Down(ctx context.Context, volumes bool) error {
 func (c *Compose) Stop(ctx context.Context, services ...string) error {
 	args := append(c.base(), "stop")
 	args = append(args, services...)
-	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
+	return c.Runner.Run(ctx, c.env(), c.Dir, "docker", args...)
 }
 
 // Exec runs `docker compose exec` for a service, letting compose resolve the
@@ -170,7 +188,7 @@ func (c *Compose) Exec(ctx context.Context, service string, interactive bool, cm
 	}
 	args = append(args, service)
 	args = append(args, cmd...)
-	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
+	return c.Runner.Run(ctx, c.env(), c.Dir, "docker", args...)
 }
 
 // Build rebuilds the named services (with --no-cache for the selective-rebuild
@@ -181,5 +199,5 @@ func (c *Compose) Build(ctx context.Context, noCache bool, services ...string) e
 		args = append(args, "--no-cache")
 	}
 	args = append(args, services...)
-	return c.Runner.Run(ctx, c.Env, c.Dir, "docker", args...)
+	return c.Runner.Run(ctx, c.env(), c.Dir, "docker", args...)
 }

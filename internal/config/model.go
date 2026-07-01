@@ -31,9 +31,32 @@ type Workspace struct {
 	MemoryBudgetMB int                  `yaml:"memoryBudgetMB"` // spec 12/18 — warn when active services' memoryMB sum exceeds this
 	Secrets        Secrets              `yaml:"secrets"`
 	Network        Network              `yaml:"network"`
-	Hooks          Hooks                `yaml:"hooks"` // spec 11 — workspace-scope lifecycle hooks
+	Backend        *BackendConfig       `yaml:"backend"` // spec 21 — where the shared stack runs (nil = local)
+	Hooks          Hooks                `yaml:"hooks"`   // spec 11 — workspace-scope lifecycle hooks
 	Shared         map[string]SharedSvc `yaml:"shared" validate:"dive"`
 	Projects       []ProjectRef         `yaml:"projects" validate:"dive"`
+}
+
+// BackendConfig selects WHERE the shared stack runs (spec 21). nil / the zero
+// value means the LOCAL Docker daemon (the active context / DOCKER_HOST) — the
+// default and fully backward-compatible. Exactly one of Context or Host may be
+// set to target a remote host:
+//   - Context names a `docker context` (typically an ssh:// one, which inherits
+//     the user's SSH config/agent/ProxyJump for free — DECISIONS D9).
+//   - Host is a raw DOCKER_HOST endpoint (ssh://, tcp://, unix://).
+//
+// The ledger is already keyed by Docker context (spec 08), so a remote endpoint
+// simply keys its own rows — no cross-context count bleed with the local daemon.
+// The mutual-exclusion of Context vs Host is enforced by the cross-field
+// validator (validateBackend); the host scheme by the `dockerhost` field rule.
+type BackendConfig struct {
+	Context string `yaml:"context"`
+	Host    string `yaml:"host" validate:"omitempty,dockerhost"`
+}
+
+// IsRemote reports whether this backend targets a non-local endpoint.
+func (b *BackendConfig) IsRemote() bool {
+	return b != nil && (b.Context != "" || b.Host != "")
 }
 
 // Profiles selects the env OVERLAY (config layering), distinct from the service

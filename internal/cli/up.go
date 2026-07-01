@@ -209,7 +209,7 @@ func downProject(ctx context.Context, d orchestrate.UpDeps, project string) erro
 		}
 	}
 
-	cp := docker.Compose{Project: "devstack-" + project, File: composeFile, Dir: outDir, Runner: docker.ExecRunner{}}
+	cp := docker.Compose{Project: "devstack-" + project, File: composeFile, Dir: outDir, Runner: docker.ExecRunner{}, ContextEnv: d.Backend.ComposeEnv()}
 	if err := cp.Down(ctx, false); err != nil {
 		return err
 	}
@@ -233,7 +233,11 @@ func buildUpDeps(cmd *cobra.Command) (orchestrate.UpDeps, func(), error) {
 		return zero, nil, err
 	}
 	ctx := cmd.Context()
-	dc, err := docker.NewClient(ctx)
+	// Resolve the Docker backend (spec 21): local (default) or a remote context/
+	// DOCKER_HOST. The read-only client and the ledger's context key both bind to
+	// this backend, so remote rows never bleed into the local counts.
+	backend := backendFor(model)
+	dc, err := backend.NewClient(ctx)
 	if err != nil {
 		return zero, nil, fmt.Errorf("docker client: %w", err)
 	}
@@ -245,7 +249,7 @@ func buildUpDeps(cmd *cobra.Command) (orchestrate.UpDeps, func(), error) {
 	lockPath := filepath.Join(xdg.RuntimeDir(), "devstack.lock")
 	mgr := &workspace.Manager{Model: model, DB: db, Docker: dc, Source: builtinSource(), LockPath: lockPath}
 	d := orchestrate.UpDeps{
-		Model: model, DB: db, Docker: dc, Manager: mgr,
+		Model: model, DB: db, Docker: dc, Manager: mgr, Backend: backend,
 		Source: mgr.Source, LockPath: lockPath,
 	}
 	closeFn := func() {
