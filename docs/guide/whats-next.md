@@ -7,6 +7,14 @@ roadmap or still a genuine gap. It's grounded in [ROADMAP.md](../ROADMAP.md) and
 the specs under [`docs/specs/`](../specs/) — where something doesn't exist yet,
 this page says so plainly.
 
+> **Now designed (proposed M10 "Interactive-DX" lane).** The three gaps below —
+> a projects/env TUI, the monorepo task-runner, and framework templates — now have
+> written RFCs: [spec 30](../specs/30-interactive-dx-and-shell.md) (active context,
+> shell integration, project + env/secrets TUIs, console header, logo) and
+> [spec 31](../specs/31-js-monorepo-templates-and-run.md) (JS/monorepo templates +
+> hot reload + `devstack run` task graph), with ADRs
+> [D18](../DECISIONS.md)/[D19](../DECISIONS.md). Still design-stage, not shipped.
+
 ## Shipped today
 
 The core is real and in daily use:

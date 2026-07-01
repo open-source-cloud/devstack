@@ -120,3 +120,5 @@ A truth-pass over already-shipped code: fix the stale README (up/down/secrets/tr
 | 19 | Imperative resource commands (db/s3/queue/stream/aws) | ~5w | v0.x — db/s3 now (M9) · [spec 29](specs/29-resource-commands.md) |
 | 20 | Data-plane resource layer (`resources:` + Provisioners) | ~4.5w | v0.x (M9) · [spec 27](specs/27-resource-layer.md) |
 | 21 | CLI completeness & README reconciliation | 2w | v0.3.0 — ships first (M9) · [spec 26](specs/26-cli-completeness.md) |
+| 22 | Interactive DX: active context, shell integration & authoring TUIs | ~6w | proposed (M10 DX) · [spec 30](specs/30-interactive-dx-and-shell.md) · [D18](DECISIONS.md) |
+| 23 | JS/monorepo templates + task-graph runner (`devstack run`) | ~8w | proposed (M10 DX) · [spec 31](specs/31-js-monorepo-templates-and-run.md) · [D19](DECISIONS.md) |
