@@ -133,5 +133,18 @@ case ":${PATH}:" in
 	   printf "       export PATH=\"%s:\$PATH\"\n" "$install_dir" >&2 ;;
 esac
 
+# --- shell-integration hint ------------------------------------------------
+# The eval hook puts the install dir on PATH, loads completions, and (the point)
+# lets `${BINARY} use` switch your shell's workspace/project. Opt-in — we only
+# print the line for the detected shell; we never edit your rc. The \$(...) is an
+# escaped literal for the user to copy.
+_ds_shell="$(basename "${SHELL:-sh}")"
+case "$_ds_shell" in
+	zsh)  info "shell integration — add to ~/.zshrc:  eval \"\$(${BINARY} shell-init zsh)\"" ;;
+	bash) info "shell integration — add to ~/.bashrc: eval \"\$(${BINARY} shell-init bash)\"" ;;
+	fish) info "shell integration — add to ~/.config/fish/config.fish:  ${BINARY} shell-init fish | source" ;;
+	*)    info "shell integration (zsh/bash/fish): eval \"\$(${BINARY} shell-init <shell>)\" — enables '${BINARY} use' to switch your shell" ;;
+esac
+
 printf '\n%s%s installed.%s run %s%s doctor%s to verify your environment.\n' \
 	"$GREEN" "$BINARY" "$RESET" "$BOLD" "$BINARY" "$RESET"
