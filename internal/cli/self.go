@@ -51,22 +51,25 @@ func newSelfCheckCmd(g *GlobalOpts) *cobra.Command {
 
 func newSelfUpdateCmd(g *GlobalOpts) *cobra.Command {
 	var (
-		check bool
-		pin   string
-		force bool
+		check      bool
+		pin        string
+		force      bool
+		skipVerify bool
 	)
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Download and install the latest release (refuses on package-managed installs)",
 		Long: "update replaces this binary with the latest GitHub release for your OS/arch,\n" +
-			"verifying its SHA-256 checksum and replacing it atomically. Homebrew/dpkg/rpm\n" +
-			"installs are refused with the right upgrade command instead.",
+			"verifying its cosign keyless signature and SHA-256 checksum, then replacing it\n" +
+			"atomically. Signature verification requires the `cosign` binary and is ON by\n" +
+			"default; pass --insecure-skip-verify to bypass it (the SHA-256 checksum is still\n" +
+			"enforced). Homebrew/dpkg/rpm installs are refused with the right upgrade command.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if check {
 				return newSelfCheckCmd(g).RunE(cmd, nil)
 			}
-			res, err := selfupdate.Update(cmd.Context(), version.Version, selfupdate.Options{Version: pin, Force: force})
+			res, err := selfupdate.Update(cmd.Context(), version.Version, selfupdate.Options{Version: pin, Force: force, SkipVerify: skipVerify})
 			if err != nil {
 				return err
 			}
@@ -91,12 +94,17 @@ func newSelfUpdateCmd(g *GlobalOpts) *cobra.Command {
 				return writeJSON(cmd, res)
 			}
 			fmt.Fprintf(w, "updated %s → %s\n", res.From, res.To)
-			fmt.Fprintln(w, "(verified by SHA-256 checksum; release-signature enforcement is not yet wired — spec 14)")
+			if res.Verified {
+				fmt.Fprintln(w, "(verified by cosign keyless signature + SHA-256 checksum)")
+			} else {
+				fmt.Fprintf(w, "(%s)\n", res.VerifyNote)
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&check, "check", false, "only check for a newer version; do not install")
 	cmd.Flags().StringVar(&pin, "version", "", "install a specific release tag (e.g. v0.2.0)")
 	cmd.Flags().BoolVar(&force, "force", false, "re-install even when already up to date (still refuses package-managed installs)")
+	cmd.Flags().BoolVar(&skipVerify, "insecure-skip-verify", false, "bypass cosign release-signature verification (SHA-256 checksum is still enforced)")
 	return cmd
 }

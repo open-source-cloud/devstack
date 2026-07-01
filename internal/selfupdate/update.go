@@ -22,6 +22,15 @@ type Options struct {
 	Version string // pin a release tag (e.g. "v0.2.0"); "" = latest
 	Force   bool   // re-install even when already up-to-date (repair a corrupt binary);
 	// NEVER overrides the package-manager CanSelfReplace refusal (spec 26/14).
+
+	// SkipVerify bypasses cosign release-signature verification (the
+	// --insecure-skip-verify escape hatch). Verification is ON by default;
+	// SkipVerify only disables the cosign check — the SHA-256 checksum is ALWAYS
+	// enforced, so this never silently drops to "no integrity check" (spec 14).
+	SkipVerify bool
+	// Verifier injects the signature backend; nil uses the cosign-shelling default.
+	// Tests set a fake to run without cosign or the network.
+	Verifier Verifier
 }
 
 // Result reports what Update did (or why it refused).
@@ -31,6 +40,11 @@ type Result struct {
 	Replaced bool
 	UpToDate bool
 	Install  Install
+	// Verified is true when the release's cosign keyless signature was verified.
+	Verified bool
+	// VerifyNote explains the verification outcome for the human-facing summary
+	// (e.g. why signature verification was skipped).
+	VerifyNote string
 }
 
 // Update performs the self-update flow for the running binary. When the install
@@ -64,9 +78,14 @@ func Update(ctx context.Context, current string, opts Options) (*Result, error) 
 		return res, nil
 	}
 
-	bin, err := downloadBinary(ctx, tag, runtime.GOOS, runtime.GOARCH)
+	bin, err := downloadBinary(ctx, tag, runtime.GOOS, runtime.GOARCH, opts.Verifier, opts.SkipVerify)
 	if err != nil {
 		return res, err
+	}
+	if opts.SkipVerify {
+		res.VerifyNote = "cosign signature verification skipped (--insecure-skip-verify); integrity checked by SHA-256 only"
+	} else {
+		res.Verified = true
 	}
 	if err := replaceExecutable(inst.Path, bin); err != nil {
 		return res, err
@@ -96,10 +115,14 @@ func assetName(tag, goos, goarch string) string {
 	return fmt.Sprintf("%s_%s_%s_%s.tar.gz", Binary, strings.TrimPrefix(tag, "v"), goos, goarch)
 }
 
-// downloadBinary fetches the release archive, verifies its SHA-256 against the
-// release checksums.txt, and returns the extracted binary bytes. Assets are
-// fetched through the GitHub API (token-honoring; works for private repos).
-func downloadBinary(ctx context.Context, tag, goos, goarch string) ([]byte, error) {
+// downloadBinary fetches the release archive and returns the extracted binary
+// bytes. The integrity chain is: (1) unless skipVerify, verify the cosign keyless
+// signature over checksums.txt (the trust root — v.VerifyBlob against the published
+// .sig/.pem, pinned to this repo's release-workflow identity); (2) verify the
+// archive's SHA-256 against the now-trusted checksums.txt. SHA-256 is enforced
+// regardless of skipVerify. Assets are fetched through the GitHub API
+// (token-honoring; works for private repos).
+func downloadBinary(ctx context.Context, tag, goos, goarch string, v Verifier, skipVerify bool) ([]byte, error) {
 	assetFile := assetName(tag, goos, goarch)
 	assets, err := releaseAssets(ctx, tag)
 	if err != nil {
@@ -121,6 +144,13 @@ func downloadBinary(ctx context.Context, tag, goos, goarch string) ([]byte, erro
 	sums, err := downloadAsset(ctx, sumsAsset.URL)
 	if err != nil {
 		return nil, fmt.Errorf("download checksums.txt: %w", err)
+	}
+
+	// Verify the signature over checksums.txt BEFORE trusting any hash in it.
+	if !skipVerify {
+		if err := verifyChecksumsSignature(ctx, v, assets, sums); err != nil {
+			return nil, err
+		}
 	}
 
 	want := checksumFor(string(sums), assetFile)

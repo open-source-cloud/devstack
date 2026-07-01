@@ -49,7 +49,32 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
-# cosign/minisign signing is deferred to post-v1 (DECISIONS D13).
+# Keyless cosign signing (spec 14 + spec 25). We sign checksums.txt — the ROOT of
+# the integrity chain: internal/selfupdate verifies this signature first, then
+# trusts every per-archive SHA-256 line in checksums.txt (each archive is checked
+# against it). Signing just checksums.txt (not each archive) keeps a single
+# signature to publish and is exactly what the client verifies.
+#
+# `cosign sign-blob` is KEYLESS: it uses the GitHub Actions OIDC token (the
+# workflow requests `id-token: write`) to obtain a short-lived Fulcio cert — no
+# long-lived private key is created or stored. It emits:
+#   checksums.txt.sig  — the signature (base64)
+#   checksums.txt.pem  — the Fulcio signing certificate (identity = the workflow)
+# both uploaded as release assets (output: true) for the client to fetch and pass
+# to `cosign verify-blob` with a pinned identity + OIDC issuer.
+signs:
+  - id: checksums-keyless
+    cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    artifacts: checksum # sign checksums.txt
+    output: true # publish .sig + .pem as release assets
+    args:
+      - sign-blob
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "--yes" # non-interactive: skip the "this will be public" confirmation
+      - "${artifact}"
 
 # Linux packages via nfpm (.deb/.rpm). Homebrew tap added once the repo/org is
 # confirmed (Q-NAME).
