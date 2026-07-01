@@ -81,16 +81,17 @@ type Budget struct {
 	Services []ServiceMem `json:"services"` // active services that declared a memoryMB, sorted
 }
 
-// CheckBudget sums the active services' declared memoryMB and compares it to the
-// workspace memoryBudgetMB. With no budget configured (0), it never reports Over —
-// the check is opt-in (spec 12 acceptance). Services with no memoryMB contribute
-// nothing and are omitted from the breakdown.
+// CheckBudget sums the active services' effective memory limit (resources.memoryMB
+// or the memoryMB shorthand, spec 18) and compares it to the workspace
+// memoryBudgetMB. With no budget configured (0), it never reports Over — the check
+// is opt-in (spec 12 acceptance). Services with no memory limit contribute nothing
+// and are omitted from the breakdown.
 func CheckBudget(m *config.Model, a Active) Budget {
 	b := Budget{BudgetMB: m.Workspace.MemoryBudgetMB}
 	for _, project := range sortedKeys(a.Services) {
 		p := m.Projects[project]
 		for _, sname := range a.Services[project] {
-			mb := p.Services[sname].MemoryMB
+			mb := p.Services[sname].EffectiveMemoryMB()
 			if mb <= 0 {
 				continue
 			}

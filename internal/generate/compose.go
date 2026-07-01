@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
@@ -106,6 +107,11 @@ func buildProjectService(res *graphResolver, m *config.Model, project, service s
 		out["expose"] = exp
 	}
 
+	// spec 18 — CPU/memory/pids limits + arch selector. memoryMB is the shorthand
+	// for resources.memoryMB; the effective value drives both the emitted limit and
+	// the up/doctor budget sum so the two never drift.
+	applyResources(out, svc.Resources, svc.MemoryMB, svc.Platform)
+
 	// spec 10 — a service-declared healthcheck overrides any template default and
 	// is lowered to a Compose-native healthcheck: block.
 	if svc.Healthcheck != nil {
@@ -151,7 +157,90 @@ func buildSharedService(m *config.Model, name string, resolved *template.Resolve
 		SharedNetwork: map[string]any{"aliases": []any{sharedAlias(name)}},
 	}
 	out["labels"] = b.labels(map[string]string{LabelShared: name})
+
+	// spec 18 — the same CPU/memory limits + arch selector apply to the shared
+	// stack; declared in workspace.yaml shared.<svc>.resources.
+	ss := m.Workspace.Shared[name]
+	applyResources(out, ss.Resources, 0, ss.Platform)
 	return out, nil
+}
+
+// applyResources lowers a spec-18 resources block + platform selector onto a
+// compose service map. Limits are DUAL-WRITTEN from one canonical byte value:
+// deploy.resources.limits.* (the spec-blessed path compose v2 honors on plain
+// containers) AND the legacy top-level cpus/mem_limit/pids_limit, so both the
+// deploy-aware and non-deploy readers see identical values and compose-go/v2's
+// cross-field consistency check passes. A service that declares no limits emits
+// no deploy block at all (no spurious diff). memoryMB is the shorthand fed as the
+// baseline memory limit; an explicit resources.memoryMB overrides it.
+func applyResources(out map[string]any, res *config.Resources, memoryMB int, platform string) {
+	// The arch selector is independent of the limits; an explicit platform: forces
+	// the pull to that arch (spec 18) and overrides any template-declared value.
+	if platform != "" {
+		out["platform"] = platform
+	}
+
+	cpus := ""
+	memMB := memoryMB
+	reserveMB := 0
+	pids := 0
+	if res != nil {
+		if res.CPUs != "" {
+			cpus = res.CPUs
+		}
+		if res.MemoryMB > 0 {
+			memMB = res.MemoryMB
+		}
+		reserveMB = res.MemoryReserveMB
+		pids = res.PidsLimit
+	}
+
+	limits := map[string]any{}
+	reservations := map[string]any{}
+	if cpus != "" {
+		out["cpus"] = cpus
+		limits["cpus"] = cpus
+	}
+	if memMB > 0 {
+		b := bytesFromMB(memMB)
+		out["mem_limit"] = b
+		limits["memory"] = b
+	}
+	if pids > 0 {
+		// compose-go/v2 cross-validates pids_limit against deploy.resources.limits.pids
+		// and rejects distinct values, so the pids cap is dual-written too even though
+		// the compose spec lists only the top-level pids_limit for it.
+		out["pids_limit"] = pids
+		limits["pids"] = pids
+	}
+	if reserveMB > 0 {
+		reservations["memory"] = bytesFromMB(reserveMB)
+	}
+
+	if len(limits) == 0 && len(reservations) == 0 {
+		return
+	}
+	resources := map[string]any{}
+	if len(limits) > 0 {
+		resources["limits"] = limits
+	}
+	if len(reservations) > 0 {
+		resources["reservations"] = reservations
+	}
+	// Merge into any template-provided deploy block rather than clobbering it.
+	deploy, _ := out["deploy"].(map[string]any)
+	if deploy == nil {
+		deploy = map[string]any{}
+	}
+	deploy["resources"] = resources
+	out["deploy"] = deploy
+}
+
+// bytesFromMB renders a mebibyte quantity as a canonical byte-count string.
+// compose-go requires memory as a string; a fixed bytes rendering (768M →
+// "805306368") keeps the generated doc byte-stable across runs (spec 18).
+func bytesFromMB(mb int) string {
+	return strconv.FormatInt(int64(mb)*1024*1024, 10)
 }
 
 // projectEnv computes the final environment map for a project service: the

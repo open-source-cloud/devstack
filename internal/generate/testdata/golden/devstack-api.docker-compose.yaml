@@ -7,8 +7,17 @@ services:
       args:
         PHP_VERSION: "8.3"
         WITH_COMPOSER: "true"
+    cpus: 1.5
     command:
       - php-fpm
+    deploy:
+      resources:
+        limits:
+          cpus: 1.5
+          memory: "805306368"
+          pids: 512
+        reservations:
+          memory: "268435456"
     entrypoint:
       - /entrypoint.sh
     environment:
@@ -40,9 +49,12 @@ services:
       com.devstack.project: api
       com.devstack.service: api
       com.devstack.workspace: acme
+    mem_limit: "805306368"
     networks:
       default: null
       devstack_shared: null
+    pids_limit: 512
+    platform: linux/amd64
     restart: unless-stopped
 networks:
   default:

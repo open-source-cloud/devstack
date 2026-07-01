@@ -84,9 +84,24 @@ type Tunnel struct {
 
 // SharedSvc is one shared infrastructure service (postgres/redis/minio/...),
 // rendered from a template (spec 03). Reached by alias DNS, ref-counted.
+//
+// Resources/Platform (spec 18) apply the same CPU/memory limits + arch selector
+// to the shared stack that project services get; changing a shared limit is a
+// stateful-service restart, gated behind the same explicit confirm as any shared
+// recreate (spec 03) — never silent.
 type SharedSvc struct {
-	Template string         `yaml:"template" validate:"required"`
-	Params   map[string]any `yaml:"params"`
+	Template  string         `yaml:"template" validate:"required"`
+	Params    map[string]any `yaml:"params"`
+	Resources *Resources     `yaml:"resources"`                              // spec 18 — CPU/memory limits
+	Platform  string         `yaml:"platform" validate:"omitempty,platform"` // spec 18 — e.g. linux/amd64
+}
+
+// EffectiveMemoryMB is the shared service's hard memory limit in MB (0 = unset).
+func (s SharedSvc) EffectiveMemoryMB() int {
+	if s.Resources != nil {
+		return s.Resources.MemoryMB
+	}
+	return 0
 }
 
 // ProjectRef points workspace.yaml at a repo containing a devstack.yaml.
@@ -130,10 +145,34 @@ type Service struct {
 	Uses        []string       `yaml:"uses"` // consume SHARED services: workspace.shared.<name>
 	Env         Env            `yaml:"env"`
 	Ports       map[string]int `yaml:"ports"`
-	Profiles    []string       `yaml:"profiles"`                  // spec 12 — Compose profile membership tags
-	MemoryMB    int            `yaml:"memoryMB"`                  // spec 12/18 — per-service budget hint (reserved)
-	Healthcheck *Healthcheck   `yaml:"healthcheck"`               // spec 10 — readiness probe (nil = none)
-	DependsOn   []DependsOn    `yaml:"dependsOn" validate:"dive"` // spec 10 — ordering edges
+	Profiles    []string       `yaml:"profiles"`                               // spec 12 — Compose profile membership tags
+	MemoryMB    int            `yaml:"memoryMB"`                               // spec 12/18 — budget hint == shorthand for resources.memoryMB
+	Resources   *Resources     `yaml:"resources"`                              // spec 18 — CPU/memory/pids limits (nil = none)
+	Platform    string         `yaml:"platform" validate:"omitempty,platform"` // spec 18 — arch selector, e.g. linux/amd64
+	Healthcheck *Healthcheck   `yaml:"healthcheck"`                            // spec 10 — readiness probe (nil = none)
+	DependsOn   []DependsOn    `yaml:"dependsOn" validate:"dive"`              // spec 10 — ordering edges
+}
+
+// Resources is the spec-18 per-service resource-limit block. It lowers to a
+// deterministic dual-write in the generated compose (deploy.resources.limits.*
+// AND the legacy top-level cpus/mem_limit/pids_limit), so both the deploy-aware
+// and non-deploy compose readers honor the same canonical values. All fields are
+// optional; an omitted field emits nothing. See docs/specs/18.
+type Resources struct {
+	CPUs            string `yaml:"cpus" validate:"omitempty,cpus"`             // fractional cores, e.g. "1.5"
+	MemoryMB        int    `yaml:"memoryMB" validate:"omitempty,gte=0"`        // hard memory limit
+	MemoryReserveMB int    `yaml:"memoryReserveMB" validate:"omitempty,gte=0"` // soft reservation (scheduling hint)
+	PidsLimit       int    `yaml:"pidsLimit" validate:"omitempty,gte=0"`       // max PIDs
+}
+
+// EffectiveMemoryMB is the service's hard memory limit in MB: resources.memoryMB
+// when set, else the top-level memoryMB shorthand (spec 18). 0 means unset — used
+// for both the emitted mem_limit and the budget summation so the two never drift.
+func (s Service) EffectiveMemoryMB() int {
+	if s.Resources != nil && s.Resources.MemoryMB > 0 {
+		return s.Resources.MemoryMB
+	}
+	return s.MemoryMB
 }
 
 // Healthcheck declares a service's readiness probe (spec 10). It compiles to
