@@ -1,0 +1,7 @@
+{
+  "yaml.schemas": {
+    "https://raw.githubusercontent.com/open-source-cloud/devstack/v1.2.3/schemas/devstack.schema.json": [
+      "devstack.yaml"
+    ]
+  }
+}

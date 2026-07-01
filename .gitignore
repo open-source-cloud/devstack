@@ -17,3 +17,9 @@ coverage.txt
 .DS_Store
 .idea/
 .vscode/
+
+# Exception: the spec-17 IDE generation goldens ARE editor configs — the
+# .vscode/.devcontainer fixtures under test must stay tracked (a parent dir must
+# be re-included before its files, so negate the directories explicitly).
+!internal/ide/testdata/golden/**/.vscode/
+!internal/ide/testdata/golden/**/.vscode/**

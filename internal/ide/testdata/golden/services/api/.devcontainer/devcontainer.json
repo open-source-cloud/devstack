@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.base.schema.json",
+  "name": "devstack-api",
+  "dockerComposeFile": [
+    "../.devstack/docker-compose.yaml"
+  ],
+  "service": "api",
+  "runServices": [
+    "api"
+  ],
+  "workspaceFolder": "/workspace",
+  "forwardPorts": [
+    8080
+  ],
+  "overrideCommand": false,
+  "shutdownAction": "none",
+  "postCreateCommand": "devstack up api --skip-clone --no-hooks"
+}

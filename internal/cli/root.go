@@ -91,6 +91,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newConfigCmd(g),
 		newInitCmd(g),
 		newGenerateCmd(g),
+		newIdeCmd(g),
 		newTemplateCmd(g),
 		newSharedCmd(g),
 		newResourceCmd(g),

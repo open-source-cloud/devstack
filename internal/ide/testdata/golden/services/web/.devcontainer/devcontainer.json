@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.base.schema.json",
+  "name": "devstack-web",
+  "dockerComposeFile": [
+    "../.devstack/docker-compose.yaml"
+  ],
+  "service": "web",
+  "runServices": [
+    "web"
+  ],
+  "workspaceFolder": "/workspace",
+  "overrideCommand": false,
+  "shutdownAction": "none",
+  "postCreateCommand": "devstack up web --skip-clone --no-hooks"
+}
