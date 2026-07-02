@@ -81,19 +81,20 @@ devstack run test lint     # build+lint in parallel, then test
 devstack run test --dry-run
 ```
 
-### Framework dev servers with watch mode (Next.js, NestJS)
+### Framework dev servers with watch mode (Next.js, NestJS) — ✅ shipped
 
-**Partially covered — the pattern already works, first-class templates don't ship
-yet.** The `node.vite` built-in builds from `build/Dockerfile` and runs
-`command: ["npm", "run", "dev"]` in watch mode. Next.js and NestJS are just **new
-templates you can author right now** with `template new`, bind-mounting source
-for hot reload:
+**Now built-in.** `node.express`, `node.nestjs`, `node.next`, `react.vite`,
+`bun.app`, and `turborepo` ship as templates with **dev-mode hot reload** — they
+bind-mount the project source (`..:/app`), keep an anonymous `node_modules`
+volume, run `install` + the dev server, and set the framework's file-watch polling
+env for WSL2. See [templates.md](templates.md). You can still author your own
+variant with `template new`; a minimal `node.next`-style template:
 
 ```bash
 devstack template new node.next --kind app
 ```
 
-A minimal `node.next` template that runs `next dev` with hot reload:
+A minimal template that runs `next dev` with hot reload:
 
 ```yaml
 # ~/.devstack/templates/node.next/template.yaml

@@ -27,8 +27,10 @@ func newSharedCmd(g *GlobalOpts) *cobra.Command {
 		newSharedStatusCmd(g),
 		newSharedGcCmd(g),
 		newSharedDoctorCmd(g),
-		newSharedExposeCmd(g),
-		newSharedPortsCmd(g),
+		// `shared expose`/`shared ports` stay as aliases of the top-level `expose`/
+		// `ports` (fresh instances; same logic) for backward compatibility.
+		newExposeCmd(g),
+		newPortsCmd(g),
 	)
 	return cmd
 }

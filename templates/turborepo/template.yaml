@@ -1,0 +1,24 @@
+schemaVersion: 1
+description: "Turborepo monorepo dev (turbo run dev across packages)."
+params:
+  nodeVersion:
+    type: string
+    default: "20"
+    description: "Node major version image tag."
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  # Install deps into the container (anon node_modules volume) then run the dev
+  # server. Source is bind-mounted from the project dir for hot reload.
+  command: ["sh", "-lc", "npm install && npx turbo run dev"]
+  environment:
+    NODE_ENV: development
+    TURBO_TELEMETRY_DISABLED: "1"
+  volumes:
+    # compose lives in <project>/.devstack, so ".." is the project source.
+    - "..:/app"
+    - "/app/node_modules"

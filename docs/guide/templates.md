@@ -46,6 +46,12 @@ what you need. A missing **required** param fails fast.
 | `php.nginx` | — (parent) | — | — | `phpVersion` ("8.3") |
 | `php.laravel.nginx` | — (extends `php.nginx`) | — | — | `appEnv` (local) |
 | `node.vite` | — | — | — | `nodeVersion` ("20"); runs `npm run dev` |
+| `node.express` | — | — | — | `nodeVersion` ("20"); `npm run dev`, hot reload |
+| `node.nestjs` | — | — | — | `nodeVersion` ("20"); `nest start --watch` |
+| `node.next` | — | — | — | `nodeVersion` ("20"); `next dev`, `WATCHPACK_POLLING` |
+| `react.vite` | — | — | — | `nodeVersion` ("20"); Vite HMR |
+| `bun.app` | — | — | — | `bunVersion` ("1"); `bun run dev` |
+| `turborepo` | — | — | — | `nodeVersion` ("20"); `turbo run dev` (monorepo) |
 | `kafka` (Redpanda) | kafka | host, port, adminPort | 9092 | `image` |
 | `nats` | nats | host, port, monitorPort | 4222 | `version` ("2") |
 | `rabbitmq` | amqp | host, port, mgmtPort | 5672 | `version` ("3"), `user` (devstack) |
