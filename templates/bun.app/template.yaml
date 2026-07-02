@@ -1,0 +1,20 @@
+schemaVersion: 1
+description: "Bun app dev server (bun run dev) with hot reload."
+params:
+  bunVersion:
+    type: string
+    default: "1"
+    description: "Bun major version image tag."
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      BUN_VERSION: "[[ .params.bunVersion ]]"
+  restart: unless-stopped
+  command: ["sh", "-lc", "bun install && bun run dev"]
+  environment:
+    NODE_ENV: development
+  volumes:
+    - "..:/app"
+    - "/app/node_modules"

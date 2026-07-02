@@ -14,6 +14,17 @@ Built-in service templates, compiled into the binary via `go:embed`
 | `php.nginx` | project base | PHP-FPM build (`build/Dockerfile`); parent template |
 | `php.laravel.nginx` | project | `extends: php.nginx`; adds Laravel env + entrypoint |
 | `node.vite` | project | Node + Vite dev server build |
+| `node.express` | project | Express dev server (`npm run dev`), source bind-mount + hot reload |
+| `node.nestjs` | project | NestJS (`nest start --watch`), hot reload |
+| `node.next` | project | Next.js (`next dev`), `WATCHPACK_POLLING` for WSL2 |
+| `react.vite` | project | React + Vite dev server (HMR) |
+| `bun.app` | project | Bun app (`bun run dev`), `oven/bun` base |
+| `turborepo` | project (monorepo) | `turbo run dev` across packages; pairs with `devstack run` |
+
+**Dev-mode hot reload.** The JS/TS app templates bind-mount the project source
+(`..:/app`, since the generated compose lives in `<project>/.devstack/`) with an
+anonymous `node_modules` volume, run `npm/bun install` then the dev server, and
+set the framework's file-watch polling env for WSL2/9p reliability.
 
 ## A template is a directory
 
