@@ -12,9 +12,8 @@ covered in [global-flags.md](global-flags.md).
 > `queue`/`topic`/`stream rm`) **require `--yes`** when run under `--json` or
 > non-interactively.
 
-> **Promotion note.** `shared expose` / `shared ports` are the current spelling;
-> a branch is promoting them to top-level `expose` / `ports` (mid-refactor). Use
-> the `shared`-prefixed forms today.
+> **Naming note.** `expose` / `ports` exist at the top level (canonical) and as
+> `shared expose` / `shared ports` (backward-compatible aliases) — same behavior.
 
 ## Lifecycle
 

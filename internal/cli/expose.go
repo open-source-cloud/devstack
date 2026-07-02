@@ -9,12 +9,12 @@ import (
 	"github.com/open-source-cloud/devstack/internal/orchestrate"
 )
 
-// newSharedExposeCmd wires `shared expose [services...]` — publish the shared
-// engines on stable 127.0.0.1 host ports so GUI clients (DataGrip, a Redis/S3
-// browser, the RabbitMQ UI) can connect. Opt-in and loopback-only; it never
-// touches the deterministic generated compose (an up-time overlay). `--off`
-// removes the publish and returns the stack to DNS-only.
-func newSharedExposeCmd(g *GlobalOpts) *cobra.Command {
+// newExposeCmd wires the top-level `expose [services...]` (also `shared expose`) —
+// publish the shared engines on stable 127.0.0.1 host ports so GUI clients
+// (DataGrip, a Redis/S3 browser, the RabbitMQ UI) can connect. Opt-in and
+// loopback-only; it never touches the deterministic generated compose (an up-time
+// overlay). `--off` removes the publish and returns the stack to DNS-only.
+func newExposeCmd(g *GlobalOpts) *cobra.Command {
 	var off bool
 	cmd := &cobra.Command{
 		Use:   "expose [services...]",
@@ -53,9 +53,9 @@ func newSharedExposeCmd(g *GlobalOpts) *cobra.Command {
 	return cmd
 }
 
-// newSharedPortsCmd wires `shared ports` — the read-only projection of the
+// newPortsCmd wires `ports` (and `shared ports`) — the read-only projection of the
 // currently-published host ports + connection strings (lock-free snapshot).
-func newSharedPortsCmd(g *GlobalOpts) *cobra.Command {
+func newPortsCmd(g *GlobalOpts) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ports",
 		Short: "Show the published 127.0.0.1 host ports for shared services (and connection strings)",
