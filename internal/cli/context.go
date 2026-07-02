@@ -2,11 +2,14 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
+	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/lock"
 	"github.com/open-source-cloud/devstack/internal/version"
 	"github.com/open-source-cloud/devstack/internal/workspace"
@@ -76,14 +79,40 @@ func renderContextHeader(cmd *cobra.Command, mgr *workspace.Manager, g *GlobalOp
 	fmt.Fprintf(cmd.OutOrStdout(), "devstack · %s\n\n", strings.Join(parts, " · "))
 }
 
+// renderPromptSegment prints a terse "workspace" or "workspace:project" segment
+// for a shell prompt (spec 30). It is deliberately cheap: it discovers the
+// workspace from config only (no Docker client, no ledger) and reads the project
+// from DEVSTACK_PROJECT (set by the `use` shell hook). Outside a workspace it
+// prints nothing, so the prompt segment simply disappears.
+func renderPromptSegment(cmd *cobra.Command) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	m, err := config.Load(cwd)
+	if err != nil {
+		return nil
+	}
+	seg := m.Workspace.Name
+	if p := os.Getenv("DEVSTACK_PROJECT"); p != "" {
+		seg += ":" + p
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), seg)
+	return nil
+}
+
 // newContextCmd wires the read-only `context` command: print the resolved active
 // workspace/project/role/docker-context/version. Lock-free.
 func newContextCmd(g *GlobalOpts) *cobra.Command {
-	return &cobra.Command{
+	var promptMode bool
+	cmd := &cobra.Command{
 		Use:   "context",
 		Short: "Show the active workspace, project, role and Docker context",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if promptMode {
+				return renderPromptSegment(cmd)
+			}
 			mgr, closeFn, err := buildManager(cmd)
 			if err != nil {
 				return err
@@ -110,6 +139,8 @@ func newContextCmd(g *GlobalOpts) *cobra.Command {
 			return tw.Flush()
 		},
 	}
+	cmd.Flags().BoolVar(&promptMode, "prompt", false, "terse single-line output for a shell prompt segment (cheap; no Docker/ledger)")
+	return cmd
 }
 
 // newUseCmd wires `use [name]`: set the active project (or switch to a registered
@@ -119,6 +150,7 @@ func newContextCmd(g *GlobalOpts) *cobra.Command {
 func newUseCmd(g *GlobalOpts) *cobra.Command {
 	var project string
 	var printScript bool
+	var shell string
 	cmd := &cobra.Command{
 		Use:   "use [name]",
 		Short: "Set the active project (or switch workspace); persists across terminals",
@@ -162,9 +194,13 @@ func newUseCmd(g *GlobalOpts) *cobra.Command {
 					targetRoot = root
 				}
 			default:
-				// Bare `use`: report current context + candidates (the fuzzy picker
-				// TUI lands in the shell-integration phase).
-				return printUseHint(cmd, mgr, projects)
+				// Bare `use`: report current context + candidates. Under --print
+				// the hint goes to stderr so stdout stays an eval-safe (empty) script.
+				out := cmd.OutOrStdout()
+				if printScript {
+					out = cmd.ErrOrStderr()
+				}
+				return printUseHint(out, mgr, projects)
 			}
 
 			if err := lock.WithLock(cmd.Context(), mgr.LockPath, func() error {
@@ -174,7 +210,7 @@ func newUseCmd(g *GlobalOpts) *cobra.Command {
 			}
 
 			if printScript {
-				emitUseScript(cmd, targetRoot, targetProject)
+				emitUseScript(cmd, targetRoot, targetProject, shell)
 				return nil
 			}
 			if g.JSON {
@@ -194,6 +230,8 @@ func newUseCmd(g *GlobalOpts) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&project, "project", "", "force-select a project in the current workspace")
 	cmd.Flags().BoolVar(&printScript, "print", false, "emit an eval-able shell script (cd + export) instead of persisting only")
+	cmd.Flags().StringVar(&shell, "shell", "", "syntax for --print output: fish (else POSIX sh/zsh/bash)")
+	_ = cmd.Flags().MarkHidden("shell")
 	return cmd
 }
 
@@ -211,11 +249,21 @@ func lookupWorkspaceRoot(mgr *workspace.Manager, name string) (string, bool, err
 	return "", false, nil
 }
 
-// emitUseScript writes the POSIX eval script the shell wrapper runs. Fish support
-// is handled by the `shell-init` wrapper (it re-emits in fish syntax).
-func emitUseScript(cmd *cobra.Command, root, project string) {
+// emitUseScript writes the eval script the shell wrapper runs: POSIX (sh/zsh/bash)
+// by default, fish syntax when shell=="fish". Single-quoted values are valid in
+// both. The `devstack` wrapper from `shell-init` eval's this to mutate the shell.
+func emitUseScript(cmd *cobra.Command, root, project, shell string) {
 	w := cmd.OutOrStdout()
 	fmt.Fprintf(w, "cd %s\n", shellQuote(root))
+	if shell == "fish" {
+		fmt.Fprintf(w, "set -gx DEVSTACK_WORKSPACE %s\n", shellQuote(root))
+		if project != "" {
+			fmt.Fprintf(w, "set -gx DEVSTACK_PROJECT %s\n", shellQuote(project))
+		} else {
+			fmt.Fprintln(w, "set -e DEVSTACK_PROJECT")
+		}
+		return
+	}
 	fmt.Fprintf(w, "export DEVSTACK_WORKSPACE=%s\n", shellQuote(root))
 	if project != "" {
 		fmt.Fprintf(w, "export DEVSTACK_PROJECT=%s\n", shellQuote(project))
@@ -226,8 +274,7 @@ func emitUseScript(cmd *cobra.Command, root, project string) {
 
 // printUseHint reports the current active context and the selectable projects when
 // `use` is invoked with no target.
-func printUseHint(cmd *cobra.Command, mgr *workspace.Manager, projects []string) error {
-	w := cmd.OutOrStdout()
+func printUseHint(w io.Writer, mgr *workspace.Manager, projects []string) error {
 	active := resolveActiveProject(mgr.Model, mgr.DB)
 	if active != "" {
 		fmt.Fprintf(w, "active project: %s\n", active)
