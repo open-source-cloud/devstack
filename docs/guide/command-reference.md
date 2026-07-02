@@ -36,6 +36,10 @@ See [projects.md](projects.md), [templates.md](templates.md).
 | Command | Does | Key flags |
 |---|---|---|
 | `init` | Author a `workspace.yaml` (pick shared services + params); wizard on a bare TTY. | `--name`, `--profile`, `--service`, `--param`, `--alias`, `--project`, `--from-store`, `--out`, `--dry-run`, `--force`, `--no-input` |
+| `use [name]` | Set the active project (or switch workspace); bare + TTY opens a fuzzy picker. | `--project`, `--print` |
+| `context` | Show the active workspace/project/role/docker-context/version. | `--json`, `--prompt` |
+| `project list` / `project new <name>` | List projects / scaffold a `devstack.yaml` + register it. | `--path`, `--template`, `--uses`, `--git` |
+| `env list` / `env set KEY=VALUE` / `env unset KEY` | View/edit a service's local env vars (comment-preserving). | `--project`, `--service` |
 | `config validate` | Validate workspace + project config (errors as `file:line:col`). | — |
 | `config show` | Print a summary of the resolved workspace config. | — |
 | `generate` | Render compose + build artifacts from config and templates. | `--project`, `--profile`, `--check` |

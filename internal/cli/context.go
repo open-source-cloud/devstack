@@ -1,19 +1,42 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
 
+	huh "charm.land/huh/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/lock"
+	"github.com/open-source-cloud/devstack/internal/prompt"
 	"github.com/open-source-cloud/devstack/internal/version"
 	"github.com/open-source-cloud/devstack/internal/workspace"
 )
+
+// pickProject runs a huh select over the workspace's projects, pre-selecting the
+// current active one. Returns "" (no error) if the user aborts.
+func pickProject(projects []string, active string) (string, error) {
+	sel := active
+	opts := make([]huh.Option[string], 0, len(projects))
+	for _, p := range projects {
+		opts = append(opts, huh.NewOption(p, p))
+	}
+	form := huh.NewForm(huh.NewGroup(
+		huh.NewSelect[string]().Title("Select the active project").Options(opts...).Value(&sel),
+	)).WithTheme(prompt.Theme())
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			return "", nil
+		}
+		return "", err
+	}
+	return sel, nil
+}
 
 // contextInfo is the resolved active-context projection printed by `context` and
 // used for the console header + shell prompt segment (spec 30).
@@ -194,13 +217,22 @@ func newUseCmd(g *GlobalOpts) *cobra.Command {
 					targetRoot = root
 				}
 			default:
-				// Bare `use`: report current context + candidates. Under --print
-				// the hint goes to stderr so stdout stays an eval-safe (empty) script.
-				out := cmd.OutOrStdout()
-				if printScript {
-					out = cmd.ErrOrStderr()
+				// Bare `use`: a fuzzy picker on a TTY; otherwise a printed hint
+				// (routed to stderr under --print so stdout stays an eval-safe,
+				// empty script for the shell wrapper).
+				if prompt.IsInteractive(g.JSON, g.Quiet, false) && len(projects) > 0 {
+					sel, err := pickProject(projects, resolveActiveProject(mgr.Model, mgr.DB))
+					if err != nil || sel == "" {
+						return err // aborted → nil
+					}
+					targetProject = sel
+				} else {
+					out := cmd.OutOrStdout()
+					if printScript {
+						out = cmd.ErrOrStderr()
+					}
+					return printUseHint(out, mgr, projects)
 				}
-				return printUseHint(out, mgr, projects)
 			}
 
 			if err := lock.WithLock(cmd.Context(), mgr.LockPath, func() error {

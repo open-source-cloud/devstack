@@ -48,14 +48,15 @@ All are Bubble Tea v2 behind `internal/prompt`, each with a non-TTY / `--json` /
 
 ## Not yet / gaps you asked about
 
-### A project-management TUI (create / edit / manage projects)
+### Project & env management — ✅ shipped
 
-**Does not exist today.** The TUIs above cover workspace *init*, *template*
-authoring, secrets *ingest*, and *monitoring* — there is no create/edit-projects
-TUI. It is a natural extension of the existing `internal/prompt` stack (same
-Bubble Tea theme, same non-TTY fallback), but it hasn't been built. For now,
-projects are authored by editing `devstack.yaml` directly
-([projects.md](projects.md)) or scaffolded via `init`.
+`devstack project list` / `project new` scaffold and register projects (writing
+`devstack.yaml` + a comment-preserving merge into `workspace.yaml`).
+`devstack env list` / `env set KEY=VALUE` / `env unset` edit a service's local
+env vars **without reflowing your file** — the AST rewrite preserves comments and
+key order. `devstack use` (bare, on a TTY) opens a fuzzy **project picker**.
+A richer full-screen create/edit TUI remains a possible extension of the
+`internal/prompt` stack.
 
 ### "Command-runner" / task projects & monorepo orchestration — ✅ shipped
 
