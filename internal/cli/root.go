@@ -85,6 +85,7 @@ func NewRootCmd(opts Options) *cobra.Command {
 		newStatusCmd(g),
 		newUseCmd(g),
 		newContextCmd(g),
+		newRunCmd(g),
 		newExposeCmd(g),
 		newPortsCmd(g),
 		newShellInitCmd(g),

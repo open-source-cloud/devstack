@@ -143,6 +143,23 @@ type Project struct {
 	Services   map[string]Service `yaml:"services" validate:"required,dive"`
 	Hooks      Hooks              `yaml:"hooks"`                     // spec 11 — project-scope lifecycle hooks
 	Resources  []ResourceDecl     `yaml:"resources" validate:"dive"` // spec 27 — declarative data-plane resources
+	Tasks      map[string]Task    `yaml:"tasks" validate:"dive"`     // spec 31 — non-container task graph (`devstack run`)
+}
+
+// Task is one node in a project's task graph (spec 31): a short-lived command run
+// on demand by `devstack run`, NOT a container. `run: host` executes on the host
+// (inheriting your toolchain); `run: exec` runs inside a service container via
+// `compose exec`. `deps` are other task names that must complete first; the graph
+// is executed in dependency order (cycles are rejected at run time). `watch` marks
+// long-running dev-server tasks that `--watch` keeps alive.
+type Task struct {
+	Command []string          `yaml:"command" validate:"required,min=1"`
+	Run     string            `yaml:"run" validate:"omitempty,oneof=host exec"` // default host
+	Service string            `yaml:"service"`                                  // target for run:exec
+	Deps    []string          `yaml:"deps"`
+	Workdir string            `yaml:"workdir"`
+	Env     map[string]string `yaml:"env"`
+	Watch   bool              `yaml:"watch"`
 }
 
 // ResourceDecl is one declarative data-plane resource a project needs INSIDE a

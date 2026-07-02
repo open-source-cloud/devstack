@@ -24,6 +24,7 @@ See [lifecycle.md](lifecycle.md).
 | `up [project...]` | Bring the workspace up (network, shared infra, generate, compose up, hooks) — idempotent saga. | `--build`, `--rebuild`, `--skip-clone`, `--health-timeout`, `--no-hooks`, `--no-preflight`, `--no-provision`, `--profile`/`-p` |
 | `down [project...]` | Stop this workspace's project stacks and release their refs (data preserved). | — |
 | `shell [service] [-- cmd...]` | Open a shell (or run a command) in a service container. | `--project` |
+| `run <task...>` | Run a project's `tasks:` graph (deps-ordered, parallel; host or in-container). | `--project`, `--parallel`, `--dry-run`, `--json` |
 | `status` | Service health + last saga outcome + shared-service ref graph. | — |
 | `logs [service...]` | Stream logs across project + shared stacks (color-keyed). | `--follow`/`-f`, `--tail` (200), `--since`, `--timestamps`, `--no-color` |
 | `dashboard` | Live TUI cockpit: services, health, log tail. | `--no-stats` |
