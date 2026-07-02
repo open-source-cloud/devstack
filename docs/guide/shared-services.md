@@ -132,11 +132,10 @@ Key properties:
 - **Opt-in per service** — with no arguments every exposable engine is published;
   name engines to narrow it.
 
-> **Naming note.** The current, shipping spelling is `devstack shared expose` and
-> `devstack shared ports` (documented here). These are being **promoted to
-> top-level** commands — `devstack expose` and `devstack ports` — on a branch
-> that is still mid-refactor. When that lands, the top-level forms become the
-> canonical spelling; the `shared`-prefixed forms are what you use today.
+> **Naming note.** These are available **both** as top-level `devstack expose` /
+> `devstack ports` (the canonical spelling) **and** as `devstack shared expose` /
+> `devstack shared ports` (backward-compatible aliases). Use whichever you prefer —
+> they run the same logic.
 
 ## Seeing the ports: `shared ports`
 

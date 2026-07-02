@@ -87,8 +87,8 @@ devstack shared ports               # show the published ports + connection stri
 ```
 
 See [Shared services & host access](shared-services.md) for the details. (These
-two verbs are currently spelled `shared expose` / `shared ports`; a branch is
-promoting them to top-level `expose` / `ports`.)
+verbs work as top-level `expose` / `ports` and as `shared expose` / `shared ports`
+aliases.)
 
 ## Stateless CLI, no daemon
 
