@@ -57,22 +57,29 @@ Bubble Tea theme, same non-TTY fallback), but it hasn't been built. For now,
 projects are authored by editing `devstack.yaml` directly
 ([projects.md](projects.md)) or scaffolded via `init`.
 
-### "Command-runner" / task projects & monorepo orchestration (Turborepo-style)
+### "Command-runner" / task projects & monorepo orchestration — ✅ shipped
 
-**Not supported — this is the genuine, biggest conceptual gap.** devstack
-orchestrates **containers and shared infrastructure**, not a task graph across
-packages. There is:
+**Now built-in.** A `tasks:` block in `devstack.yaml` declares non-container
+commands with `deps:` edges; `devstack run <task>` plans the dependency graph and
+runs it — independent tasks in parallel, output streamed and prefixed per task.
+`run: host` runs on your host toolchain; `run: exec` runs inside a service
+container via `compose exec`. Monorepo/Turborepo pipelines are covered two ways:
+the `turborepo` template runs `turbo run` inside its container, or you map each
+package's scripts into `tasks:` so `devstack run` owns the graph.
 
-- no `run:` / `task:` service kind (services are containers, not scripts),
-- no `devstack run <task>` verb, and
-- no dependency-aware, monorepo-aware script runner (nothing like
-  Turborepo/Nx pipelines).
+```yaml
+# devstack.yaml
+tasks:
+  build: { run: host, command: ["pnpm", "build"] }
+  test:  { run: host, command: ["pnpm", "test"], deps: [build] }
+  lint:  { run: host, command: ["pnpm", "lint"] }
+```
 
-Closing this would be the single largest addition: a new **non-container
-"task"/"script" service kind** (or a `devstack run` verb) plus a monorepo-aware
-task graph. We don't want to overclaim — today, if you need
-`build → test → deploy` task graphs across packages, use your existing task
-runner alongside devstack; devstack handles the infra those tasks talk to.
+```bash
+devstack run test          # runs build → test
+devstack run test lint     # build+lint in parallel, then test
+devstack run test --dry-run
+```
 
 ### Framework dev servers with watch mode (Next.js, NestJS)
 
