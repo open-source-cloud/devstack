@@ -127,9 +127,9 @@ Effort is **person-weeks at production OSS quality** (tests + docs + cross-platf
 | **Full v1 (all pillars)** | **54** | **~13–15 months** |
 | Beta DX lane (M8, 0.x — post-GA) | ~8 | +~2.5 months |
 | Local-cloud platform lane (M9, 0.x) | ~14 | +~4 months |
-| Interactive-DX lane (M10, proposed — 0.x) | ~14 | +~4 months |
+| Interactive-DX lane (M10, 0.x) | ~14 | +~4 months |
 
-> **M10 — Interactive-DX lane (proposed).** An active-context model + shell integration (`use`/`context`/`shell-init` eval hook, completions, prompt segment), project + env/secrets authoring TUIs, a console context header, ASCII-logo branding, a JS/TS + monorepo template library with hot reload, and a devstack-native task-graph runner (`devstack run`). Specs: [30](specs/30-interactive-dx-and-shell.md) (interactive DX & shell) · [31](specs/31-js-monorepo-templates-and-run.md) (JS/monorepo templates + `run`). ADRs: [D18](DECISIONS.md) (active context & shell) · [D19](DECISIONS.md) (task graph). Strictly additive; stays 0.x; no change to the deterministic `generate` pipeline or lock-first concurrency.
+> **M10 — Interactive-DX lane. ✅ SHIPPED.** An active-context model + shell integration (`use`/`context`/`shell-init` eval hook, completions, prompt segment), project + env authoring commands (comment-preserving), a console context header, ASCII-logo branding, top-level `expose`/`ports`, a JS/TS + monorepo template library with hot reload, and a devstack-native task-graph runner (`devstack run`). Specs: [30](specs/30-interactive-dx-and-shell.md) (interactive DX & shell) · [31](specs/31-js-monorepo-templates-and-run.md) (JS/monorepo templates + `run`). ADRs: [D18](DECISIONS.md) (active context & shell) · [D19](DECISIONS.md) (task graph). Strictly additive; stays 0.x; no change to the deterministic `generate` pipeline or lock-first concurrency.
 
 Calendar applies a 0.6–0.75 throughput factor (context-switching, Docker/WSL2/macOS debugging, dependency churn, docs, CI). Treat as planning ranges, not commitments.
 
