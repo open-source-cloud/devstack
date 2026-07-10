@@ -1,0 +1,40 @@
+schemaVersion: 1
+description: "Shared MariaDB engine (MySQL-compatible), reached over the shared network at shared-mariadb."
+provides: mariadb
+exports: [host, port, user, password, database]
+defaultPort: 3306
+params:
+  version:
+    type: string
+    default: "11"
+    description: "MariaDB major version image tag."
+  rootUser:
+    type: string
+    default: devstack
+    description: "Application user created on first boot (per-project users are provisioned on top in M2)."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Password for both the MariaDB root account and the application user (local development)."
+
+service:
+  image: "mariadb:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    MARIADB_ROOT_PASSWORD: "[[ .params.rootPassword ]]"
+    MARIADB_DATABASE: "[[ .params.rootUser ]]"
+    MARIADB_USER: "[[ .params.rootUser ]]"
+    MARIADB_PASSWORD: "[[ .params.rootPassword ]]"
+  volumes:
+    - "mariadbdata:/var/lib/mysql"
+  # The mariadb image ships /usr/local/bin/healthcheck.sh; --connect proves the
+  # socket accepts connections and --innodb_initialized proves it is done booting.
+  healthcheck:
+    test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 30s
+
+volumes:
+  mariadbdata: {}

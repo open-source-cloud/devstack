@@ -1,0 +1,37 @@
+schemaVersion: 1
+description: "Shared ArangoDB engine (multi-model + web UI), reached over the shared network at shared-arangodb."
+provides: arangodb
+exports: [host, port, user, password]
+defaultPort: 8529
+params:
+  version:
+    type: string
+    default: "3.12"
+    description: "ArangoDB version image tag."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Password for the built-in root account (local development)."
+
+service:
+  image: "arangodb:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    ARANGO_ROOT_PASSWORD: "[[ .params.rootPassword ]]"
+  volumes:
+    - "arangodata:/var/lib/arangodb3"
+    - "arangoapps:/var/lib/arangodb3-apps"
+  # The dev password is inlined (loopback-only threat model) so the check needs no
+  # shell env expansion; arangosh exits non-zero if the server is not yet serving.
+  healthcheck:
+    test:
+      - CMD-SHELL
+      - arangosh --server.endpoint tcp://127.0.0.1:8529 --server.password '[[ .params.rootPassword ]]' --javascript.execute-string 'db._version()' || exit 1
+    interval: 15s
+    timeout: 10s
+    retries: 10
+    start_period: 30s
+
+volumes:
+  arangodata: {}
+  arangoapps: {}

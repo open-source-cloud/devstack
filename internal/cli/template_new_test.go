@@ -123,15 +123,15 @@ func TestTemplateNewEngineHasNoBuildTree(t *testing.T) {
 	t.Setenv("DEVSTACK_HOME", t.TempDir())
 	dir := t.TempDir()
 	if out, err := runCmd(t, "template", "new", "--no-input", "--dir", dir,
-		"--kind", "engine", "--name", "mariadb", "--base-image", "mariadb:11",
-		"--provides", "mariadb", "--exports", "host,port,user", "--port", "3306"); err != nil {
+		"--kind", "engine", "--name", "couchdb", "--base-image", "couchdb:3",
+		"--provides", "couchdb", "--exports", "host,port,user", "--port", "5984"); err != nil {
 		t.Fatalf("author engine: %v\n%s", err, out)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "mariadb", "build")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "couchdb", "build")); !os.IsNotExist(err) {
 		t.Errorf("engine template must have no build/ tree, stat err = %v", err)
 	}
-	manifest, _ := os.ReadFile(filepath.Join(dir, "mariadb", "template.yaml"))
-	for _, want := range []string{"image: mariadb:11", "provides: mariadb"} {
+	manifest, _ := os.ReadFile(filepath.Join(dir, "couchdb", "template.yaml"))
+	for _, want := range []string{"image: couchdb:3", "provides: couchdb"} {
 		if !strings.Contains(string(manifest), want) {
 			t.Errorf("engine template.yaml missing %q:\n%s", want, manifest)
 		}

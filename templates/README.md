@@ -8,9 +8,14 @@ Built-in service templates, compiled into the binary via `go:embed`
 
 | Template | Kind | Notes |
 |---|---|---|
-| `postgres` | shared engine | `provides: postgres`; version-aware PGDATA mount (PG18+ moved it — DECISIONS D8) |
-| `redis` | shared engine | `provides: redis` |
-| `minio` | shared engine | `provides: minio` |
+| `postgres` | shared engine | `provides: postgres`; version-aware PGDATA mount (PG18+ moved it — DECISIONS D8); exposes on `5432` |
+| `mysql` | shared engine | `provides: mysql`; exposes on `3306` |
+| `mariadb` | shared engine | `provides: mariadb` (MySQL-compatible); exposes on `3306` |
+| `mongodb` | shared engine | `provides: mongodb`; exposes on `27017` |
+| `cassandra` | shared engine | `provides: cassandra` (CQL); exposes on `9042` |
+| `arangodb` | shared engine | `provides: arangodb` (multi-model + web UI); exposes on `8529` |
+| `redis` | shared engine | `provides: redis`; exposes on `6379` |
+| `minio` | shared engine | `provides: minio`; exposes on `9000`/`9001` |
 | `php.nginx` | project base | PHP-FPM build (`build/Dockerfile`); parent template |
 | `php.laravel.nginx` | project | `extends: php.nginx`; adds Laravel env + entrypoint |
 | `node.vite` | project | Node + Vite dev server build |
