@@ -283,6 +283,19 @@ func (db *DB) ReleasePortsFor(owner string) error {
 	return nil
 }
 
+// ReleasePort removes the single (owner, purpose) allocation so the next
+// AllocatePort re-picks a port. Used when a persisted port has become
+// unpublishable (e.g. it now falls inside a Windows/Hyper-V excluded range).
+// Hold the lock.
+func (db *DB) ReleasePort(owner, purpose string) error {
+	_, err := db.Exec(`DELETE FROM port_alloc WHERE ctx=? AND owner=? AND purpose=?`,
+		db.Ctx, owner, purpose)
+	if err != nil {
+		return fmt.Errorf("release port %s/%s: %w", owner, purpose, err)
+	}
+	return nil
+}
+
 // --- provisioning ownership ledger ----------------------------------------
 
 // RecordProvisioned ties a provisioned db/role/bucket/redis_index to a project

@@ -20,9 +20,12 @@ const (
 // FreeHostPort allocates a stable host port for (owner, purpose), persisting it
 // inside the lock. A port is considered free only if it is ALL of: not already
 // persisted in the ledger, bindable on 127.0.0.1 (advisory), and not published
-// by a live tool-managed container. The last check is essential on Docker Desktop
-// (macOS/WSL2), where a host bind-test does not reflect the VM's port proxy, so
-// the bind-test alone would hand out a port Docker already holds (spec 03/08).
+// by a live tool-managed container. The published check is essential on Docker
+// Desktop (macOS/WSL2), where a host bind-test does not reflect the VM's port
+// proxy, so the bind-test alone would hand out a port Docker already holds (spec
+// 03/08). On WSL2 it additionally skips Windows/Hyper-V excluded port ranges (see
+// ports_excluded.go) that a Linux-side bind-test cannot see but Docker Desktop's
+// Windows-side forward rejects with a 500.
 func (m *Manager) FreeHostPort(ctx context.Context, owner, purpose string, base int) (int, error) {
 	published, err := m.publishedPorts(ctx)
 	if err != nil {
@@ -30,9 +33,21 @@ func (m *Manager) FreeHostPort(ctx context.Context, owner, purpose string, base 
 	}
 	var port int
 	err = lock.WithLock(ctx, m.LockPath, func() error {
+		// A port persisted on a previous run may now sit inside a Windows/Hyper-V
+		// excluded range (those move across reboots on WSL2). AllocatePort returns
+		// a persisted port verbatim without re-checking, so an excluded one would
+		// be handed back forever and every publish would fail — release it first so
+		// a usable port is picked.
+		if p, ok, e := m.DB.PortFor(owner, purpose); e != nil {
+			return e
+		} else if ok && portExcluded(p) {
+			if e := m.DB.ReleasePort(owner, purpose); e != nil {
+				return e
+			}
+		}
 		var e error
 		port, e = m.DB.AllocatePort(owner, purpose, base, base+portRangeSpan, func(p int) bool {
-			return !published[p] && bindable(p)
+			return !published[p] && !portExcluded(p) && bindable(p)
 		})
 		return e
 	})
