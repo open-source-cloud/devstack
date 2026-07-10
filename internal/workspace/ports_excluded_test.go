@@ -6,19 +6,19 @@ import (
 )
 
 // netshSample mirrors real `netsh int ipv4 show excludedportrange` output,
-// including the Portuguese localized header (the parser must be locale-agnostic)
-// and the trailing "*" note on administered exclusions.
+// including the header/separator lines (which the parser must skip regardless of
+// locale) and the trailing "*" note on administered exclusions.
 const netshSample = `
-Protocolo tcp Intervalos de Exclusão de Porta
+Protocol tcp Port Exclusion Ranges
 
-Porta Inicial    Porta Final
+Start Port    End Port
 ----------    --------
      50000       50059     *
      54235       54235
      58956       59055
      59056       59155
 
-* - Exclusões de porta administradas.
+* - Administered port exclusions.
 `
 
 func TestParseExcludedPortRanges(t *testing.T) {
