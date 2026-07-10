@@ -30,6 +30,11 @@ const APIVersion = "devstack/v1"
 // knownEngines maps a devdock template/image keyword to a devstack shared engine.
 var knownEngines = map[string]string{
 	"postgres": "postgres", "postgresql": "postgres", "postgis": "postgres",
+	"mysql": "mysql", "percona": "mysql",
+	"mariadb": "mariadb",
+	"mongo":   "mongodb", "mongodb": "mongodb",
+	"cassandra": "cassandra",
+	"arango":    "arangodb", "arangodb": "arangodb",
 	"redis": "redis", "valkey": "redis",
 	"minio": "minio",
 }

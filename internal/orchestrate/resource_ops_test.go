@@ -95,7 +95,7 @@ func TestCreateResourceImperative(t *testing.T) {
 		t.Errorf("provisioned rows = %v, want database:reports + role:reports", kinds)
 	}
 	// The shared instance's loopback overlay was applied (compose up on shared stack).
-	if !fr.saw("-p "+"devstack-shared", "compose.provision.yaml") {
+	if !fr.saw("-p "+"devstack-shared", "compose.expose.yaml") {
 		t.Errorf("overlay not applied via compose up: %v", fr.cmds)
 	}
 	// The create ran the guarded DDL on loopback.

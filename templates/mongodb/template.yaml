@@ -1,0 +1,36 @@
+schemaVersion: 1
+description: "Shared MongoDB engine, reached over the shared network at shared-mongodb."
+provides: mongodb
+exports: [host, port, user, password, database]
+defaultPort: 27017
+params:
+  version:
+    type: string
+    default: "7"
+    description: "MongoDB major version image tag."
+  rootUser:
+    type: string
+    default: devstack
+    description: "Root username created on first boot (authSource=admin)."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Root password for local development."
+
+service:
+  image: "mongo:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    MONGO_INITDB_ROOT_USERNAME: "[[ .params.rootUser ]]"
+    MONGO_INITDB_ROOT_PASSWORD: "[[ .params.rootPassword ]]"
+  volumes:
+    - "mongodata:/data/db"
+  healthcheck:
+    test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 20s
+
+volumes:
+  mongodata: {}

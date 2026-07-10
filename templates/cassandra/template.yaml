@@ -1,0 +1,35 @@
+schemaVersion: 1
+description: "Shared Apache Cassandra engine, reached over the shared network at shared-cassandra."
+provides: cassandra
+exports: [host, port]
+defaultPort: 9042
+params:
+  version:
+    type: string
+    default: "5"
+    description: "Cassandra major version image tag."
+  clusterName:
+    type: string
+    default: devstack
+    description: "Cluster name advertised by the node."
+
+service:
+  image: "cassandra:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    CASSANDRA_CLUSTER_NAME: "[[ .params.clusterName ]]"
+    # Single-node dev cluster: skip the gossip/token bootstrap wait.
+    CASSANDRA_ENDPOINT_SNITCH: SimpleSnitch
+  volumes:
+    - "cassandradata:/var/lib/cassandra"
+  # Cassandra is slow to accept CQL; the long start_period keeps the up saga from
+  # aborting before the native transport is listening.
+  healthcheck:
+    test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' 127.0.0.1 9042 || exit 1"]
+    interval: 30s
+    timeout: 10s
+    retries: 10
+    start_period: 90s
+
+volumes:
+  cassandradata: {}

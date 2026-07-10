@@ -33,6 +33,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 		noHooks       bool
 		noPreflight   bool
 		noProvision   bool
+		noExpose      bool
 		profiles      []string
 		healthTimeout time.Duration
 	)
@@ -56,6 +57,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 			d.NoHooks = noHooks
 			d.NoPreflight = noPreflight
 			d.NoProvision = noProvision
+			d.NoExpose = noExpose
 			d.Profiles = profiles
 			d.HealthTimeout = healthTimeout
 
@@ -112,6 +114,7 @@ func newUpCmd(g *GlobalOpts) *cobra.Command {
 	cmd.Flags().BoolVar(&noHooks, "no-hooks", false, "skip lifecycle hooks")
 	cmd.Flags().BoolVar(&noPreflight, "no-preflight", false, "skip the preflight checks")
 	cmd.Flags().BoolVar(&noProvision, "no-provision", false, "skip per-project Postgres role/db provisioning")
+	cmd.Flags().BoolVar(&noExpose, "no-expose", false, "do not auto-publish shared engines on their standard 127.0.0.1 ports")
 	cmd.Flags().StringArrayVarP(&profiles, "profile", "p", nil,
 		"service slice(s) to start — repeatable & comma-separated (spec 12); empty → defaultProfile or all")
 	return cmd
@@ -174,8 +177,39 @@ func newDownCmd(g *GlobalOpts) *cobra.Command {
 					fmt.Fprintf(w, "[ok]      down %s\n", p)
 				}
 			}
+			// Tear down anything now left running: after the project refs are dropped,
+			// stop every shared service that fell to zero refs (`shared gc --stop`).
+			// This is what makes `down` actually bring the workspace DOWN instead of
+			// leaving warm engines behind, while still respecting cross-workspace
+			// sharing — an engine another workspace still references keeps running.
+			var stopped []string
+			if gc, err := d.Manager.GC(ctx, true); err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+			} else {
+				stopped = gc.Stopped
+				// When shared services were actually stopped, their saga phases are no
+				// longer satisfied — clear them so the next `up` restarts the shared
+				// stack (and re-publishes its ports) instead of skipping.
+				if len(stopped) > 0 {
+					_ = lock.WithLock(ctx, d.LockPath, func() error {
+						for _, ph := range []string{"shared", "provision", "resources"} {
+							if e := d.DB.ClearPhase(d.Model.Workspace.Name, "", ph); e != nil {
+								return e
+							}
+						}
+						return nil
+					})
+				}
+				if !g.JSON && !g.Quiet {
+					for _, s := range stopped {
+						fmt.Fprintf(w, "[ok]      stopped shared %s (0 refs)\n", s)
+					}
+				}
+			}
 			if g.JSON {
-				if err := writeJSON(cmd, map[string]any{"down": results}); err != nil {
+				if err := writeJSON(cmd, map[string]any{"down": results, "sharedStopped": stopped}); err != nil {
 					return err
 				}
 			}
@@ -216,7 +250,13 @@ func downProject(ctx context.Context, d orchestrate.UpDeps, project string) erro
 	if _, err := d.Manager.RegisterDown(ctx, project); err != nil {
 		return err
 	}
-	return nil
+	// The compose-up phase is no longer satisfied — its containers were just
+	// removed. Clear the saga record so the NEXT `up` re-runs it instead of
+	// skipping on a stale fingerprint (the "re-up after down is a no-op" bug).
+	// firstRun/hooks are intentionally NOT cleared (they keep run-once semantics).
+	return lock.WithLock(ctx, d.LockPath, func() error {
+		return d.DB.ClearPhase(d.Model.Workspace.Name, project, "compose-up")
+	})
 }
 
 // buildUpDeps assembles the up/down dependencies from the current directory. It

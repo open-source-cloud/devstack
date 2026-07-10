@@ -93,16 +93,21 @@ func TestConnectionURL(t *testing.T) {
 		port   int
 		want   string
 	}{
-		{"postgres", exposePort{5432, "postgres", "", 0, true}, pgParams, 55432, "postgres://admin:s3cret@127.0.0.1:55432/postgres?sslmode=disable"},
-		{"postgres", exposePort{5432, "postgres", "", 0, true}, nil, 55432, "postgres://devstack:devstack@127.0.0.1:55432/postgres?sslmode=disable"},
-		{"redis", exposePort{6379, "redis", "", 0, true}, nil, 56379, "redis://127.0.0.1:56379"},
-		{"minio", exposePort{9000, "s3", "", 0, true}, nil, 59000, "http://127.0.0.1:59000"},
-		{"localstack", exposePort{4566, "aws", "", 0, true}, nil, 54566, "http://127.0.0.1:54566"},
-		{"nats", exposePort{8222, "monitor", "", 0, false}, nil, 58222, "http://127.0.0.1:58222"},
-		{"nats", exposePort{4222, "nats", "", 0, true}, nil, 54222, "nats://127.0.0.1:54222"},
+		{"postgres", exposePort{5432, "postgres", "", 0, true}, pgParams, 5432, "postgres://admin:s3cret@127.0.0.1:5432/postgres?sslmode=disable"},
+		{"postgres", exposePort{5432, "postgres", "", 0, true}, nil, 5432, "postgres://devstack:devstack@127.0.0.1:5432/postgres?sslmode=disable"},
+		{"mysql", exposePort{3306, "mysql", "", 0, true}, nil, 3306, "mysql://devstack:devstack@127.0.0.1:3306/devstack"},
+		{"mariadb", exposePort{3306, "mariadb", "", 0, true}, nil, 3306, "mysql://devstack:devstack@127.0.0.1:3306/devstack"},
+		{"mongodb", exposePort{27017, "mongodb", "", 0, true}, nil, 27017, "mongodb://devstack:devstack@127.0.0.1:27017/?authSource=admin"},
+		{"cassandra", exposePort{9042, "cassandra", "", 0, true}, nil, 9042, "127.0.0.1:9042"},
+		{"arangodb", exposePort{8529, "arangodb", "", 0, true}, nil, 8529, "http://127.0.0.1:8529"},
+		{"redis", exposePort{6379, "redis", "", 0, true}, nil, 6379, "redis://127.0.0.1:6379"},
+		{"minio", exposePort{9000, "s3", "", 0, true}, nil, 9000, "http://127.0.0.1:9000"},
+		{"localstack", exposePort{4566, "aws", "", 0, true}, nil, 4566, "http://127.0.0.1:4566"},
+		{"nats", exposePort{8222, "monitor", "", 0, false}, nil, 8222, "http://127.0.0.1:8222"},
+		{"nats", exposePort{4222, "nats", "", 0, true}, nil, 4222, "nats://127.0.0.1:4222"},
 		{"kafka", exposePort{19092, "kafka", "", 0, true}, nil, 49092, "127.0.0.1:49092"},
-		{"rabbitmq", exposePort{15672, "management", "", 0, false}, nil, 55673, "http://127.0.0.1:55673"},
-		{"rabbitmq", exposePort{5672, "amqp", "", 0, true}, nil, 55672, "amqp://devstack@127.0.0.1:55672"},
+		{"rabbitmq", exposePort{15672, "management", "", 0, false}, nil, 15672, "http://127.0.0.1:15672"},
+		{"rabbitmq", exposePort{5672, "amqp", "", 0, true}, nil, 5672, "amqp://devstack@127.0.0.1:5672"},
 	}
 	for _, tc := range cases {
 		if got := connectionURL(tc.engine, tc.ep, tc.params, tc.port); got != tc.want {
@@ -111,34 +116,48 @@ func TestConnectionURL(t *testing.T) {
 	}
 }
 
-// TestExposePortsNeverCollideWithProvision is the load-bearing invariant: the
-// expose overlay and the provision overlay must never publish the SAME host port
-// (base) for the SAME engine, or applying both recreates the container with a
-// duplicate binding. Kafka is the deliberate exception — its host clients MUST
-// use the fixed advertised 49092, so it reuses the provision port.
-func TestExposePortsNeverCollideWithProvision(t *testing.T) {
-	provBase := map[string]int{}
-	for engine, ov := range engineOverlays {
-		provBase[engine] = ov.portBase
-	}
+// TestExposeUsesStandardPorts locks in the unification: there is exactly ONE host
+// port per engine — the well-known one — and it equals the in-container port. That
+// is what lets provisioning/reset/snapshot and `expose` share a single overlay
+// instead of two fighting bands. Kafka is the deliberate exception: its broker
+// advertises a fixed 127.0.0.1:49092 external listener, so its host base is 49092
+// while the container port is 19092.
+func TestExposeUsesStandardPorts(t *testing.T) {
 	for engine, ports := range exposeEngines {
 		for _, ep := range ports {
-			if pb, ok := provBase[engine]; ok && ep.base == pb && engine != "kafka" {
-				t.Errorf("engine %q expose base %d collides with provision base %d", engine, ep.base, pb)
+			if engine == "kafka" {
+				continue
+			}
+			if ep.base != ep.container {
+				t.Errorf("engine %q port %q: host base %d must equal container port %d (standard-port unification)",
+					engine, ep.label, ep.base, ep.container)
 			}
 		}
 	}
-	// Every expose base must be unique across all engines/ports (no two services
-	// fight for the same host port at allocation time either).
-	seen := map[int]string{}
-	for _, ports := range exposeEngines {
+	// Every provisionable engine must have a PRIMARY expose port, since provisioning
+	// now resolves its host-reachable admin endpoint from that single overlay.
+	for _, engine := range []string{"postgres", "redis", "minio", "nats", "kafka", "localstack"} {
+		if _, ok := primaryExposePort(engine); !ok {
+			t.Errorf("engine %q has no primary expose port — provisioning cannot reach it", engine)
+		}
+	}
+	// Within a SINGLE engine, its ports must not share a base (else a two-port
+	// engine like minio/nats/rabbitmq would self-collide on the same host port).
+	for engine, ports := range exposeEngines {
+		seen := map[int]string{}
 		for _, ep := range ports {
-			if prev, ok := seen[ep.base]; ok && prev != ep.purpose {
-				t.Errorf("expose base %d reused across purposes %q and %q", ep.base, prev, ep.purpose)
+			if prev, ok := seen[ep.base]; ok {
+				t.Errorf("engine %q reuses expose base %d across purposes %q and %q", engine, ep.base, prev, ep.purpose)
 			}
 			seen[ep.base] = ep.purpose
 		}
 	}
+	// Across DIFFERENT engines the base MAY repeat on purpose: two engines that
+	// speak the same wire protocol want the same well-known port (mysql/mariadb on
+	// 3306, localstack/ministack on 4566). That is safe because the ledger's
+	// AllocatePort skips every already-allocated port (AllocatedPorts spans all
+	// owners), so a lone engine lands on the standard port and, when both are
+	// exposed, the second transparently deconflicts to base+1.
 }
 
 func TestFileExists(t *testing.T) {

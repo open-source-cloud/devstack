@@ -27,32 +27,6 @@ import (
 // ledger INSERT OR IGNORE). Non-postgres engines without a live provisioner in
 // this milestone are skipped with a note (their provisioners land in Full scope).
 
-// perEngineOverlay is the per-engine host-reachability registry (spec 27
-// §"host-port overlay"): each engine publishes 127.0.0.1:<ledgerPort>:<container>
-// under its own (purpose, portBase). Postgres reuses the provision phase's values
-// so one overlay/port covers both phases.
-type perEngineOverlay struct {
-	purpose       string
-	portBase      int
-	containerPort int
-}
-
-var engineOverlays = map[string]perEngineOverlay{
-	"postgres": {provisionPurpose, provisionPortBase, 5432},
-	"redis":    {"redis-provision", 46379, 6379},
-	"minio":    {"minio-provision", 49000, 9000},
-	"nats":     {"nats-provision", 44222, 4222},
-	// Kafka (Redpanda) advertises its EXTERNAL listener at a fixed 127.0.0.1:49092
-	// (template), so host clients must reach the broker on exactly that port — the
-	// overlay publishes the in-container external listener (19092) there. The port
-	// base is 49092 to match the advertised address (a mismatch breaks the Kafka
-	// bootstrap→redirect handshake, the #1 local-Kafka footgun).
-	"kafka": {"kafka-provision", 49092, 19092},
-	// LocalStack's edge port (4566) serves every AWS service (SQS/SNS/S3/…); keyed by
-	// the template name "localstack" (its `provides: aws` is reached on this port).
-	"localstack": {"localstack-provision", 44566, 4566},
-}
-
 // declaredKind reports whether a ledger kind is one the declarative resources
 // phase manages (so drift detection ignores the implicitly-provisioned
 // role/database/redis_index kinds and never false-flags them).
@@ -161,27 +135,22 @@ func resourcesPhase(d UpDeps, decls []resDecl) Phase {
 		Run: func(ctx context.Context) (any, error) {
 			reg := buildRegistry(d)
 
-			// Resolve each instance's published host port (idempotent — returns the
-			// port the shared/provision phase already allocated).
-			ports := map[string]int{}
+			// Resolve each instance's published host port through the unified expose
+			// overlay (idempotent — returns the standard port the shared phase already
+			// published, no container recreate). Non-exposable engines simply don't
+			// appear in the map and are reported as skipped below.
+			want := make([]string, 0, len(decls))
 			for _, r := range decls {
-				if _, done := ports[r.instance]; done {
-					continue
-				}
-				ov, ok := engineOverlays[r.engine]
-				if !ok {
-					continue // no host-reachability overlay for this engine yet
-				}
-				p, err := d.Manager.FreeHostPort(ctx, generate.SharedAlias(r.instance), ov.purpose, ov.portBase)
-				if err != nil {
-					return nil, fmt.Errorf("resolve resource port for %s: %w", r.instance, err)
-				}
-				ports[r.instance] = p
+				want = append(want, r.instance)
+			}
+			ports, err := ensureExposed(ctx, d, want)
+			if err != nil {
+				return nil, fmt.Errorf("publish host ports for resources: %w", err)
 			}
 
 			provisioned := []map[string]any{}
 			skipped := []map[string]any{}
-			err := lock.WithLock(ctx, d.LockPath, func() error {
+			err = lock.WithLock(ctx, d.LockPath, func() error {
 				for _, r := range decls {
 					prov, ok := reg.For(r.engine)
 					if !ok {

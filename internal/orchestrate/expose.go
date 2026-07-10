@@ -19,11 +19,16 @@ import (
 // is an explicit opt-in that, like provisioning, is an UP-TIME compose overlay —
 // it never touches the deterministic, golden-asserted generated compose.
 //
-// Exposure uses its OWN host-port range (55xxx/58xxx…), distinct from the
-// provisioning range (45xxx), so the expose overlay and the provision overlay
-// never publish the same host port and can both be applied without a duplicate
-// binding. Ports are ledger-allocated (FreeHostPort), so the same engine keeps
-// the same host port across runs and two terminals never collide.
+// Exposure publishes each engine on its OWN WELL-KNOWN host port — the same port
+// the template advertises in-network (postgres→5432, mysql→3306, redis→6379, …) —
+// so a GUI client's default connection settings just work and there is no gap
+// between what the template's `defaultPort` says and what the host sees. That
+// deliberately differs from the provisioning range (45xxx): the two overlays map
+// different host ports onto the same container port, so both can be applied
+// without a duplicate binding. Ports remain ledger-allocated (FreeHostPort) with
+// the standard port as the search base, so the same engine keeps the same host
+// port across runs, and if a host-native server already holds the standard port
+// the allocator transparently falls back to the next free one in the band.
 
 const exposeFile = "compose.expose.yaml"
 
@@ -37,25 +42,121 @@ type exposePort struct {
 }
 
 // exposeEngines maps a shared engine (template name) to the ports `shared expose`
-// publishes on 127.0.0.1. Bases sit in the 5xxxx range so they never collide with
-// the 4xxxx provisioning overlay. Kafka is the exception: host clients MUST reach
-// the broker on 127.0.0.1:49092 (the fixed advertised external listener from the
-// template), so it reuses the kafka provision port rather than a 5xxxx one.
+// publishes on 127.0.0.1. The search base is the engine's WELL-KNOWN port (equal
+// to the in-container port), so clients connect on the port they already expect
+// and the allocator only drifts off it when a host-native server already holds it.
+// Kafka is the exception: host clients MUST reach the broker on 127.0.0.1:49092
+// (the fixed advertised external listener from the template), so it keeps that
+// base and reuses the kafka provision port rather than the broker's 19092.
 var exposeEngines = map[string][]exposePort{
-	"postgres":   {{5432, "postgres", "pg-expose", 55432, true}},
-	"redis":      {{6379, "redis", "redis-expose", 56379, true}},
-	"minio":      {{9000, "s3", "minio-expose", 59000, true}, {9001, "console", "minio-console-expose", 59001, false}},
-	"localstack": {{4566, "aws", "localstack-expose", 54566, true}},
-	"ministack":  {{4566, "aws", "ministack-expose", 54567, true}},
-	"nats":       {{4222, "nats", "nats-expose", 54222, true}, {8222, "monitor", "nats-monitor-expose", 58222, false}},
+	"postgres":   {{5432, "postgres", "pg-expose", 5432, true}},
+	"mysql":      {{3306, "mysql", "mysql-expose", 3306, true}},
+	"mariadb":    {{3306, "mariadb", "mariadb-expose", 3306, true}},
+	"mongodb":    {{27017, "mongodb", "mongodb-expose", 27017, true}},
+	"cassandra":  {{9042, "cassandra", "cassandra-expose", 9042, true}},
+	"arangodb":   {{8529, "arangodb", "arangodb-expose", 8529, true}},
+	"redis":      {{6379, "redis", "redis-expose", 6379, true}},
+	"minio":      {{9000, "s3", "minio-expose", 9000, true}, {9001, "console", "minio-console-expose", 9001, false}},
+	"localstack": {{4566, "aws", "localstack-expose", 4566, true}},
+	"ministack":  {{4566, "aws", "ministack-expose", 4566, true}},
+	"nats":       {{4222, "nats", "nats-expose", 4222, true}, {8222, "monitor", "nats-monitor-expose", 8222, false}},
 	"kafka":      {{19092, "kafka", "kafka-provision", 49092, true}},
-	"rabbitmq":   {{5672, "amqp", "rmq-expose", 55672, true}, {15672, "management", "rmq-mgmt-expose", 55673, false}},
+	"rabbitmq":   {{5672, "amqp", "rmq-expose", 5672, true}, {15672, "management", "rmq-mgmt-expose", 15672, false}},
 }
 
 // ExposableEngine reports whether an engine has a defined host-expose port set.
 func ExposableEngine(engine string) bool {
 	_, ok := exposeEngines[engine]
 	return ok
+}
+
+// primaryExposePort returns an engine's PRIMARY host-published port — the one a
+// client (and devstack's own host-side provisioning) connects the engine's main
+// protocol on. This is the single source of truth for "the host port of engine
+// X": provisioning, reset, snapshot and resource ops all resolve their admin
+// endpoint from it, so there is exactly ONE host port per engine (the standard
+// one), never a separate provisioning band.
+func primaryExposePort(engine string) (exposePort, bool) {
+	for _, ep := range exposeEngines[engine] {
+		if ep.primary {
+			return ep, true
+		}
+	}
+	return exposePort{}, false
+}
+
+// exposableUnion returns the shared instances to publish: the requested set
+// unioned with any already-exposed instance (so writing the overlay never drops
+// another instance's ports), filtered to engines that support exposure. Sorted
+// for a byte-stable overlay.
+func exposableUnion(d UpDeps, want []string) []string {
+	set := map[string]bool{}
+	for _, i := range want {
+		set[i] = true
+	}
+	for _, i := range exposedInstances(d.Model.Root) {
+		set[i] = true
+	}
+	var insts []string
+	for i := range set {
+		if s, ok := d.Model.Workspace.Shared[i]; ok && ExposableEngine(s.Template) {
+			insts = append(insts, i)
+		}
+	}
+	sort.Strings(insts)
+	return insts
+}
+
+// exposeOverlayFor allocates the standard host ports for the exposable instances
+// among want (unioned with the currently-exposed set) and WRITES the single
+// expose overlay, returning its path ("" when there is nothing to expose). It does
+// NOT run compose — the caller (the shared phase) folds the returned path into its
+// own `compose up` so ports are published as the services come up.
+func exposeOverlayFor(ctx context.Context, d UpDeps, want []string) (string, error) {
+	insts := exposableUnion(d, want)
+	if len(insts) == 0 {
+		return "", nil
+	}
+	_, pub, err := allocateExposePorts(ctx, d, insts)
+	if err != nil {
+		return "", err
+	}
+	return writeExposeOverlay(d.Model.Root, pub)
+}
+
+// ensureExposed is the unified host-reachability primitive for callers that need
+// the ports published NOW (provisioning, reset, snapshot, resource ops): it writes
+// the single expose overlay for the exposable instances among want (unioned with
+// the already-exposed set, so it never drops another instance's ports) and applies
+// it via `compose up`. It is idempotent — the ledger returns the same standard
+// ports and the overlay bytes are unchanged, so compose does not recreate the
+// container on repeat calls. Returns instance→primary host port. Because both
+// auto-expose and every host-side admin op go through this one overlay, they can
+// never fight over a container's `ports:`.
+func ensureExposed(ctx context.Context, d UpDeps, want []string) (map[string]int, error) {
+	insts := exposableUnion(d, want)
+	if len(insts) == 0 {
+		return map[string]int{}, nil
+	}
+	out, pub, err := allocateExposePorts(ctx, d, insts)
+	if err != nil {
+		return nil, err
+	}
+	overlay, err := writeExposeOverlay(d.Model.Root, pub)
+	if err != nil {
+		return nil, err
+	}
+	outDir := filepath.Join(d.Model.Root, generate.GenDir, "shared")
+	if err := composeUpShared(ctx, d, outDir, []string{overlay}, insts); err != nil {
+		return nil, fmt.Errorf("apply host-port overlay: %w", err)
+	}
+	ports := map[string]int{}
+	for _, ep := range out {
+		if ep.Primary {
+			ports[ep.Instance] = ep.Port
+		}
+	}
+	return ports, nil
 }
 
 // ExposedPort is one host-published shared-service port with a client-ready
@@ -284,6 +385,18 @@ func connectionURL(engine string, ep exposePort, params map[string]any, port int
 		user := paramString(params, "rootUser", "devstack")
 		pass := paramString(params, "rootPassword", "devstack")
 		return fmt.Sprintf("postgres://%s:%s@%s/postgres?sslmode=disable", user, pass, host)
+	case "mysql", "mariadb":
+		user := paramString(params, "rootUser", "devstack")
+		pass := paramString(params, "rootPassword", "devstack")
+		return fmt.Sprintf("mysql://%s:%s@%s/%s", user, pass, host, user)
+	case "mongodb":
+		user := paramString(params, "rootUser", "devstack")
+		pass := paramString(params, "rootPassword", "devstack")
+		return fmt.Sprintf("mongodb://%s:%s@%s/?authSource=admin", user, pass, host)
+	case "cassandra":
+		return host // contact point host:9042 (CQL native transport)
+	case "arangodb":
+		return "http://" + host // HTTP API + web UI (root / rootPassword)
 	case "redis":
 		return "redis://" + host
 	case "minio":

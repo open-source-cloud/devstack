@@ -1,0 +1,40 @@
+schemaVersion: 1
+description: "Shared MySQL engine, reached over the shared network at shared-mysql."
+provides: mysql
+exports: [host, port, user, password, database]
+defaultPort: 3306
+params:
+  version:
+    type: string
+    default: "8"
+    description: "MySQL major version image tag."
+  rootUser:
+    type: string
+    default: devstack
+    description: "Application user created on first boot (per-project users are provisioned on top in M2)."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Password for both the MySQL root account and the application user (local development)."
+
+service:
+  image: "mysql:[[ .params.version ]]"
+  restart: unless-stopped
+  # MYSQL_USER must not be "root" (the image refuses it); the app user is created
+  # alongside the always-present root account, both sharing the dev password.
+  environment:
+    MYSQL_ROOT_PASSWORD: "[[ .params.rootPassword ]]"
+    MYSQL_DATABASE: "[[ .params.rootUser ]]"
+    MYSQL_USER: "[[ .params.rootUser ]]"
+    MYSQL_PASSWORD: "[[ .params.rootPassword ]]"
+  volumes:
+    - "mysqldata:/var/lib/mysql"
+  healthcheck:
+    test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p'[[ .params.rootPassword ]]' --silent"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 30s
+
+volumes:
+  mysqldata: {}
