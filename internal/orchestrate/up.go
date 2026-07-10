@@ -92,6 +92,7 @@ type UpDeps struct {
 	NoHooks       bool          // skip the hooks phase
 	NoPreflight   bool          // skip the preflight phase (fast inner loops)
 	NoProvision   bool          // skip the per-project Postgres provision phase
+	NoExpose      bool          // skip auto-publishing shared engines on their standard host ports
 	HealthTimeout time.Duration // per-shared-service gate cap (0 → health.Compile default)
 }
 
@@ -424,31 +425,20 @@ func sharedPhase(d UpDeps, projects, names, provInstances []string) Phase {
 					"(spec 21 follow-up). Re-run with --no-provision, or provision from the remote host",
 					d.Backend.String())
 			}
-			// Publish each provisioned Postgres on 127.0.0.1:<ledger port> via an
-			// up-time overlay so host-side pgx (the provision phase) can reach it,
-			// without touching the deterministic generated compose.
+			// Expose-by-default: publish every exposable shared engine on its stable
+			// STANDARD 127.0.0.1 port through the single unified overlay, so a GUI
+			// client's defaults just work AND host-side pgx (the provision phase) has
+			// one port to dial — there is no separate provisioning band. Opt out with
+			// --no-expose; skipped on a remote backend (bridge is not host-routable, so
+			// nothing host-published would be reachable anyway).
 			var overrides []string
-			if len(prov) > 0 {
-				ports := map[string]int{}
-				for _, inst := range prov {
-					port, err := d.Manager.FreeHostPort(ctx, generate.SharedAlias(inst), provisionPurpose, provisionPortBase)
-					if err != nil {
-						return nil, fmt.Errorf("allocate provision port for %s: %w", inst, err)
-					}
-					ports[inst] = port
-				}
-				overlay, err := writeProvisionOverlay(d.Model.Root, ports, 5432)
+			if !d.NoExpose && d.Backend.Reachability() != docker.ViaProxy {
+				pub, err := exposeOverlayFor(ctx, d, names)
 				if err != nil {
 					return nil, err
 				}
-				overrides = append(overrides, overlay)
-			}
-			// Re-apply a prior `shared expose` so GUI-client host ports persist
-			// across up/down (its 5xxxx range never collides with provisioning's
-			// 4xxxx). Skipped on a remote backend (bridge is not host-routable).
-			if d.Backend.Reachability() != docker.ViaProxy {
-				if p := exposeOverlayPath(d.Model.Root); fileExists(p) {
-					overrides = append(overrides, p)
+				if pub != "" {
+					overrides = append(overrides, pub)
 				}
 			}
 			cp.Overrides = overrides

@@ -70,6 +70,95 @@ func ExposableEngine(engine string) bool {
 	return ok
 }
 
+// primaryExposePort returns an engine's PRIMARY host-published port — the one a
+// client (and devstack's own host-side provisioning) connects the engine's main
+// protocol on. This is the single source of truth for "the host port of engine
+// X": provisioning, reset, snapshot and resource ops all resolve their admin
+// endpoint from it, so there is exactly ONE host port per engine (the standard
+// one), never a separate provisioning band.
+func primaryExposePort(engine string) (exposePort, bool) {
+	for _, ep := range exposeEngines[engine] {
+		if ep.primary {
+			return ep, true
+		}
+	}
+	return exposePort{}, false
+}
+
+// exposableUnion returns the shared instances to publish: the requested set
+// unioned with any already-exposed instance (so writing the overlay never drops
+// another instance's ports), filtered to engines that support exposure. Sorted
+// for a byte-stable overlay.
+func exposableUnion(d UpDeps, want []string) []string {
+	set := map[string]bool{}
+	for _, i := range want {
+		set[i] = true
+	}
+	for _, i := range exposedInstances(d.Model.Root) {
+		set[i] = true
+	}
+	var insts []string
+	for i := range set {
+		if s, ok := d.Model.Workspace.Shared[i]; ok && ExposableEngine(s.Template) {
+			insts = append(insts, i)
+		}
+	}
+	sort.Strings(insts)
+	return insts
+}
+
+// exposeOverlayFor allocates the standard host ports for the exposable instances
+// among want (unioned with the currently-exposed set) and WRITES the single
+// expose overlay, returning its path ("" when there is nothing to expose). It does
+// NOT run compose — the caller (the shared phase) folds the returned path into its
+// own `compose up` so ports are published as the services come up.
+func exposeOverlayFor(ctx context.Context, d UpDeps, want []string) (string, error) {
+	insts := exposableUnion(d, want)
+	if len(insts) == 0 {
+		return "", nil
+	}
+	_, pub, err := allocateExposePorts(ctx, d, insts)
+	if err != nil {
+		return "", err
+	}
+	return writeExposeOverlay(d.Model.Root, pub)
+}
+
+// ensureExposed is the unified host-reachability primitive for callers that need
+// the ports published NOW (provisioning, reset, snapshot, resource ops): it writes
+// the single expose overlay for the exposable instances among want (unioned with
+// the already-exposed set, so it never drops another instance's ports) and applies
+// it via `compose up`. It is idempotent — the ledger returns the same standard
+// ports and the overlay bytes are unchanged, so compose does not recreate the
+// container on repeat calls. Returns instance→primary host port. Because both
+// auto-expose and every host-side admin op go through this one overlay, they can
+// never fight over a container's `ports:`.
+func ensureExposed(ctx context.Context, d UpDeps, want []string) (map[string]int, error) {
+	insts := exposableUnion(d, want)
+	if len(insts) == 0 {
+		return map[string]int{}, nil
+	}
+	out, pub, err := allocateExposePorts(ctx, d, insts)
+	if err != nil {
+		return nil, err
+	}
+	overlay, err := writeExposeOverlay(d.Model.Root, pub)
+	if err != nil {
+		return nil, err
+	}
+	outDir := filepath.Join(d.Model.Root, generate.GenDir, "shared")
+	if err := composeUpShared(ctx, d, outDir, []string{overlay}, insts); err != nil {
+		return nil, fmt.Errorf("apply host-port overlay: %w", err)
+	}
+	ports := map[string]int{}
+	for _, ep := range out {
+		if ep.Primary {
+			ports[ep.Instance] = ep.Port
+		}
+	}
+	return ports, nil
+}
+
 // ExposedPort is one host-published shared-service port with a client-ready
 // connection hint (the `--json` schema + the plain-table source).
 type ExposedPort struct {

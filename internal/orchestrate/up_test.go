@@ -756,11 +756,11 @@ func TestBuildUpProvisionsPerProjectDB(t *testing.T) {
 		t.Errorf("provisioned rows = %v, want role:app + database:app", kinds)
 	}
 	// The shared stack was brought up WITH the loopback port overlay.
-	if !fr.saw("-p "+generate.SharedStackName, "-f", "compose.provision.yaml") {
+	if !fr.saw("-p "+generate.SharedStackName, "-f", "compose.expose.yaml") {
 		t.Errorf("shared up did not include the provision overlay: %v", fr.cmds)
 	}
 	// The overlay file was written, loopback-bound.
-	overlay := filepath.Join(d.Model.Root, generate.GenDir, "shared", "compose.provision.yaml")
+	overlay := filepath.Join(d.Model.Root, generate.GenDir, "shared", "compose.expose.yaml")
 	body, err := os.ReadFile(overlay)
 	if err != nil {
 		t.Fatalf("overlay not written: %v", err)

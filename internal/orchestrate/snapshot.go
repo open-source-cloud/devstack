@@ -22,10 +22,10 @@ import (
 // This file is the imperative side of spec 15 (thin v2 scope): Postgres-only
 // `db snapshot` / `db restore` / `db snapshot ls` against a project's per-project
 // tenant database on the SHARED Postgres. It reuses the provision phase's exact
-// host-reachability pattern (engineTarget → FreeHostPort + writeProvisionOverlay
-// + `compose up -d <inst>` on the shared stack, DECISIONS D8) so the dump/restore
-// client tooling reaches the warm server over a ledger-allocated 127.0.0.1 host
-// port WITHOUT publishing a permanent one.
+// host-reachability pattern (engineTarget → ensureExposed: the single unified
+// standard-port overlay + `compose up -d <inst>` on the shared stack, DECISIONS
+// D8) so the dump/restore client tooling reaches the warm server over the same
+// stable 127.0.0.1 host port `expose`/auto-expose publishes.
 //
 // Lock discipline (spec 15): the streaming dump/restore PROCESS runs OUTSIDE the
 // flock (it is long — holding the lock for a multi-GB pg_restore would serialize

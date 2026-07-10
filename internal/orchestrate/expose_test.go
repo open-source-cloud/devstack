@@ -116,21 +116,29 @@ func TestConnectionURL(t *testing.T) {
 	}
 }
 
-// TestExposePortsNeverCollideWithProvision is the load-bearing invariant: the
-// expose overlay and the provision overlay must never publish the SAME host port
-// (base) for the SAME engine, or applying both recreates the container with a
-// duplicate binding. Kafka is the deliberate exception — its host clients MUST
-// use the fixed advertised 49092, so it reuses the provision port.
-func TestExposePortsNeverCollideWithProvision(t *testing.T) {
-	provBase := map[string]int{}
-	for engine, ov := range engineOverlays {
-		provBase[engine] = ov.portBase
-	}
+// TestExposeUsesStandardPorts locks in the unification: there is exactly ONE host
+// port per engine — the well-known one — and it equals the in-container port. That
+// is what lets provisioning/reset/snapshot and `expose` share a single overlay
+// instead of two fighting bands. Kafka is the deliberate exception: its broker
+// advertises a fixed 127.0.0.1:49092 external listener, so its host base is 49092
+// while the container port is 19092.
+func TestExposeUsesStandardPorts(t *testing.T) {
 	for engine, ports := range exposeEngines {
 		for _, ep := range ports {
-			if pb, ok := provBase[engine]; ok && ep.base == pb && engine != "kafka" {
-				t.Errorf("engine %q expose base %d collides with provision base %d", engine, ep.base, pb)
+			if engine == "kafka" {
+				continue
 			}
+			if ep.base != ep.container {
+				t.Errorf("engine %q port %q: host base %d must equal container port %d (standard-port unification)",
+					engine, ep.label, ep.base, ep.container)
+			}
+		}
+	}
+	// Every provisionable engine must have a PRIMARY expose port, since provisioning
+	// now resolves its host-reachable admin endpoint from that single overlay.
+	for _, engine := range []string{"postgres", "redis", "minio", "nats", "kafka", "localstack"} {
+		if _, ok := primaryExposePort(engine); !ok {
+			t.Errorf("engine %q has no primary expose port — provisioning cannot reach it", engine)
 		}
 	}
 	// Within a SINGLE engine, its ports must not share a base (else a two-port

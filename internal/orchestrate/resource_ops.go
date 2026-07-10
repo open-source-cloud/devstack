@@ -3,10 +3,8 @@ package orchestrate
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/open-source-cloud/devstack/internal/config"
-	"github.com/open-source-cloud/devstack/internal/docker"
 	"github.com/open-source-cloud/devstack/internal/generate"
 	"github.com/open-source-cloud/devstack/internal/lock"
 	"github.com/open-source-cloud/devstack/internal/resource"
@@ -79,35 +77,23 @@ func engineDefaultAdmin(engine string) string {
 	}
 }
 
-// engineTarget resolves the host-reachable admin endpoint for an instance: it
-// allocates/looks up the ledger port, writes+applies the per-engine 127.0.0.1
-// overlay via `compose up -d <inst>` (idempotent, no recreate), and returns the
-// Target with the instance's admin creds. Postgres + MinIO overlays are wired.
+// engineTarget resolves the host-reachable admin endpoint for an instance. It
+// publishes the instance on its stable STANDARD 127.0.0.1 port through the single
+// unified expose overlay (ensureExposed — idempotent, no recreate) and returns the
+// Target with the instance's admin creds. There is exactly one host port per
+// engine (the well-known one), shared with `expose`, so this can never fight the
+// expose overlay over the container's `ports:`.
 func engineTarget(ctx context.Context, d UpDeps, engine, instance string) (resource.Target, error) {
-	ov, ok := engineOverlays[engine]
-	if !ok {
-		return resource.Target{}, fmt.Errorf("engine %q has no host-reachability overlay (postgres/minio in this milestone)", engine)
+	if _, ok := primaryExposePort(engine); !ok {
+		return resource.Target{}, fmt.Errorf("engine %q has no host-reachability port defined", engine)
 	}
-	port, err := d.Manager.FreeHostPort(ctx, generate.SharedAlias(instance), ov.purpose, ov.portBase)
-	if err != nil {
-		return resource.Target{}, fmt.Errorf("allocate host port for %s: %w", instance, err)
-	}
-	overlay, err := writeProvisionOverlay(d.Model.Root, map[string]int{instance: port}, ov.containerPort)
+	ports, err := ensureExposed(ctx, d, []string{instance})
 	if err != nil {
 		return resource.Target{}, err
 	}
-	outDir := filepath.Join(d.Model.Root, generate.GenDir, "shared")
-	runner := d.Runner
-	if runner == nil {
-		runner = docker.ExecRunner{}
-	}
-	cp := docker.Compose{
-		Project: generate.SharedStackName,
-		File:    filepath.Join(outDir, generate.ComposeFile),
-		Dir:     outDir, Runner: runner, Overrides: []string{overlay},
-	}
-	if err := cp.Up(ctx, instance); err != nil {
-		return resource.Target{}, fmt.Errorf("apply host overlay for %s: %w", instance, err)
+	port, ok := ports[instance]
+	if !ok {
+		return resource.Target{}, fmt.Errorf("no host port resolved for %s (engine %q)", instance, engine)
 	}
 	params := d.Model.Workspace.Shared[instance].Params
 	def := engineDefaultAdmin(engine)

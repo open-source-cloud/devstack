@@ -100,11 +100,11 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 	}
 
 	// The host-port overlay was allocated in the ledger and applied via compose up.
-	port, ok, _ := ledger.PortFor("shared-postgres", "pg-provision")
+	port, ok, _ := ledger.PortFor("shared-postgres", "pg-expose")
 	if !ok || port == 0 {
 		t.Errorf("host port not allocated for the snapshot overlay: port=%d ok=%v", port, ok)
 	}
-	if !fr.saw("-p devstack-shared", "compose.provision.yaml") {
+	if !fr.saw("-p devstack-shared", "compose.expose.yaml") {
 		t.Errorf("loopback overlay not applied via compose up: %v", fr.cmds)
 	}
 

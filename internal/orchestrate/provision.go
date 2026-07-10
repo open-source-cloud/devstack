@@ -3,10 +3,7 @@ package orchestrate
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/generate"
@@ -25,12 +22,7 @@ import (
 // is generated or stored, and an app opts in via the documented DSN
 // `postgres://<project>:<project>@shared-postgres:5432/<project>`.
 
-const (
-	provisionPurpose  = "pg-provision" // ledger port_alloc purpose
-	provisionPortBase = 45432          // host port search base for shared Postgres
-	provisionFile     = "compose.provision.yaml"
-	pgTemplate        = "postgres" // shared engine template that this phase provisions
-)
+const pgTemplate = "postgres" // shared engine template that this phase provisions
 
 // PgConnector opens an admin connection to a Postgres DSN. Injectable so the
 // provision phase is unit-testable without a live server (the default wraps
@@ -99,33 +91,6 @@ func provInstanceList(targets []provTarget) []string {
 	return sortedStringSlice(keysOf(set))
 }
 
-// writeProvisionOverlay writes the up-time compose overlay that publishes each
-// provisioned instance on 127.0.0.1:<hostPort>:<containerPort>. Returns the overlay
-// path. Loopback-only so nothing is exposed beyond the host (spec 03 / no host
-// ports). containerPort is the engine's in-container port (5432 postgres / 9000
-// minio); every instance in ports shares one engine, so one container port covers all.
-func writeProvisionOverlay(root string, ports map[string]int, containerPort int) (string, error) {
-	var b strings.Builder
-	b.WriteString("services:\n")
-	insts := make([]string, 0, len(ports))
-	for inst := range ports {
-		insts = append(insts, inst)
-	}
-	sort.Strings(insts)
-	for _, inst := range insts {
-		fmt.Fprintf(&b, "  %s:\n    ports:\n      - \"127.0.0.1:%d:%d\"\n", inst, ports[inst], containerPort)
-	}
-	dir := filepath.Join(root, generate.GenDir, "shared")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-	path := filepath.Join(dir, provisionFile)
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
-		return "", err
-	}
-	return path, nil
-}
-
 // provisionPhase creates each project's role+database on its shared Postgres,
 // idempotently, holding the flock for the SQL mutations (DECISIONS D7/D8). It
 // re-derives the host port from the ledger (the same one sharedPhase published),
@@ -156,20 +121,19 @@ func provisionPhase(d UpDeps, targets []provTarget) Phase {
 				byInst[t.instance] = append(byInst[t.instance], t.project)
 			}
 
-			// Resolve each instance's published host port (FreeHostPort self-locks
-			// and is idempotent — returns the port sharedPhase already allocated).
-			ports := map[string]int{}
-			for _, inst := range sortedStringSlice(keysOf(byInst)) {
-				p, err := d.Manager.FreeHostPort(ctx, generate.SharedAlias(inst), provisionPurpose, provisionPortBase)
-				if err != nil {
-					return nil, fmt.Errorf("resolve provision port for %s: %w", inst, err)
-				}
-				ports[inst] = p
+			// Publish each shared Postgres on its stable STANDARD 127.0.0.1 port and
+			// resolve the port host-side pgx dials. This is the SAME unified overlay as
+			// `expose`/auto-expose (idempotent — no container recreate), and it also
+			// guarantees the port exists even under --no-expose, since host-side
+			// provisioning fundamentally needs one host port to reach.
+			ports, err := ensureExposed(ctx, d, sortedStringSlice(keysOf(byInst)))
+			if err != nil {
+				return nil, fmt.Errorf("publish shared postgres host port: %w", err)
 			}
 
 			provisioned := []map[string]any{}
 			// Hold the flock for the role/db mutations (provision pkg contract).
-			err := lock.WithLock(ctx, d.LockPath, func() error {
+			err = lock.WithLock(ctx, d.LockPath, func() error {
 				for _, inst := range sortedStringSlice(keysOf(byInst)) {
 					params := d.Model.Workspace.Shared[inst].Params
 					user := paramString(params, "rootUser", "devstack")

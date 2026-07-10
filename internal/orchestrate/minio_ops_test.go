@@ -135,7 +135,7 @@ func TestCreateBucketImperative(t *testing.T) {
 		t.Errorf("bucket ownership row not recorded: %v", rows)
 	}
 	// The minio loopback overlay was applied publishing :9000 (not 5432).
-	overlay := filepath.Join(d.Model.Root, generate.GenDir, "shared", "compose.provision.yaml")
+	overlay := filepath.Join(d.Model.Root, generate.GenDir, "shared", "compose.expose.yaml")
 	body, err := os.ReadFile(overlay)
 	if err != nil {
 		t.Fatalf("overlay not written: %v", err)
@@ -143,7 +143,7 @@ func TestCreateBucketImperative(t *testing.T) {
 	if !strings.Contains(string(body), ":9000") {
 		t.Errorf("minio overlay must publish container port 9000, got:\n%s", body)
 	}
-	if !fr.saw("-p "+generate.SharedStackName, "compose.provision.yaml") {
+	if !fr.saw("-p "+generate.SharedStackName, "compose.expose.yaml") {
 		t.Errorf("overlay not applied via compose up: %v", fr.cmds)
 	}
 }

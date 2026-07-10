@@ -87,7 +87,7 @@ func TestResetDropsAndReprovisions(t *testing.T) {
 
 	// The loopback overlay was applied via compose up on the shared stack (same
 	// host-reachability path as the provision phase).
-	if !fr.saw("-p "+"devstack-shared", "compose.provision.yaml") {
+	if !fr.saw("-p "+"devstack-shared", "compose.expose.yaml") {
 		t.Errorf("reset did not apply the provision overlay via compose up: %v", fr.cmds)
 	}
 }
