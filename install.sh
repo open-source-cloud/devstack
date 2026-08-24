@@ -51,6 +51,22 @@ else
 fi
 have tar || die "need tar to unpack the release archive"
 
+# rate_limit_note explains an exhausted GitHub API quota.
+#
+# GitHub answers a spent anonymous quota with 403 Forbidden, which is
+# indistinguishable from a permissions failure unless you look at the limit
+# itself. Without this, a PUBLIC repo that is merely rate-limited reports as
+# "if the repo is private", sending people to hunt a problem that is not there.
+# /rate_limit does not itself count against the quota.
+rate_limit_note() {
+	rl="$(dl "https://api.github.com/rate_limit" 2>/dev/null || true)"
+	case "$rl" in
+	*'"remaining":0'* | *'"remaining": 0'*)
+		printf '%s' " The GitHub API rate limit for your IP is exhausted — this is NOT a permissions problem. Set GITHUB_TOKEN to raise the limit to 5000/hour, or wait for the window to reset."
+		;;
+	esac
+}
+
 # extract_tag pulls the first tag_name out of a GitHub releases JSON payload.
 extract_tag() { grep '"tag_name"' | head -n1 | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/'; }
 
@@ -77,7 +93,7 @@ if [ -z "$tag" ]; then
 	# pre-release-only repos and the brief post-publish API propagation window).
 	tag="$(api "${API}/releases/latest" 2>/dev/null | extract_tag || true)"
 	[ -n "$tag" ] || tag="$(api "${API}/releases" 2>/dev/null | extract_tag || true)"
-	[ -n "$tag" ] || die "could not determine the latest release. Pin one with DEVSTACK_VERSION=vX.Y.Z, and if the repo is private set GITHUB_TOKEN."
+	[ -n "$tag" ] || die "could not determine the latest release. Pin one with DEVSTACK_VERSION=vX.Y.Z, and set GITHUB_TOKEN if the repo is private.$(rate_limit_note)"
 fi
 # goreleaser strips the leading 'v' from the archive filename's version field.
 version="${tag#v}"

@@ -249,7 +249,7 @@ func downloadAsset(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s returned %s", url, resp.Status)
+		return nil, apiError(url, resp)
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 200<<20))
 }
