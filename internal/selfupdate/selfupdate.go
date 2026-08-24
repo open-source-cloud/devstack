@@ -167,7 +167,7 @@ func githubGET(ctx context.Context, url string) ([]byte, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API %s returned %s (set GITHUB_TOKEN if the repo is private)", url, resp.Status)
+		return nil, apiError(url, resp)
 	}
 	return body, nil
 }
