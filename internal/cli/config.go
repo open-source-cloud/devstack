@@ -23,7 +23,7 @@ func newConfigCmd(g *GlobalOpts) *cobra.Command {
 			"and every referenced project's devstack.yaml, validates structure and\n" +
 			"cross-references against the workspace graph, and reports errors as file:line:col.",
 	}
-	cmd.AddCommand(newConfigValidateCmd(g), newConfigShowCmd(g))
+	cmd.AddCommand(newConfigValidateCmd(g), newConfigShowCmd(g), newConfigSchemaCmd(g))
 	return cmd
 }
 

@@ -20,7 +20,9 @@ package ide
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/open-source-cloud/devstack/internal/config"
 	"github.com/open-source-cloud/devstack/internal/version"
@@ -135,13 +137,36 @@ func (g *Generator) rel(abs string) string {
 	return filepath.ToSlash(r)
 }
 
-// schemaURL is the published JSON-Schema URL pinned to the binary's schema
-// version, used as the editor authoring aid (yaml-language-server / yaml.schemas).
-// The Go validator remains the source of truth (spec 17, DECISIONS D16).
-func (g *Generator) schemaURL() string {
+// schemaRef is the git ref the published schema URLs point at. A release binary
+// pins its own tag so the schema can never drift from the binary that wrote the
+// modeline; a dev/snapshot build has no such tag on GitHub, so it falls back to
+// main rather than emitting a URL that 404s (the bug this replaced: every
+// generated settings.json pointed at v<version>/schemas/, a path that did not
+// exist at any tag).
+func (g *Generator) schemaRef() string {
+	if semverTagRE.MatchString(g.schemaVersion) {
+		return "v" + strings.TrimPrefix(g.schemaVersion, "v")
+	}
+	return "main"
+}
+
+// semverTagRE matches a released version stamp (with or without a leading v), so
+// only builds that correspond to a real git tag pin themselves to it.
+var semverTagRE = regexp.MustCompile(`^v?\d+\.\d+\.\d+`)
+
+// schemaURL is the published JSON-Schema URL for one config file kind, used as
+// the editor authoring aid (yaml-language-server / yaml.schemas). The Go
+// validator remains the source of truth (spec 17, DECISIONS D16); the schemas
+// themselves are hand-authored under schemas/ and round-trip tested against the
+// config structs.
+func (g *Generator) schemaURL(kind config.SchemaKind) string {
+	name, ok := config.SchemaFilename(kind)
+	if !ok {
+		name, _ = config.SchemaFilename(config.SchemaProject)
+	}
 	return fmt.Sprintf(
-		"https://raw.githubusercontent.com/open-source-cloud/devstack/v%s/schemas/devstack.schema.json",
-		g.schemaVersion,
+		"https://raw.githubusercontent.com/open-source-cloud/devstack/%s/schemas/%s",
+		g.schemaRef(), name,
 	)
 }
 

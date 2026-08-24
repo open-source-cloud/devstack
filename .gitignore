@@ -23,3 +23,8 @@ coverage.txt
 # be re-included before its files, so negate the directories explicitly).
 !internal/ide/testdata/golden/**/.vscode/
 !internal/ide/testdata/golden/**/.vscode/**
+
+# Per-user Claude Code settings (MCP-server approvals, local permissions). The
+# generated .claude/skills/ tree IS tracked — it is what teaches every teammate's
+# agent to drive devstack (spec 32).
+.claude/settings.local.json

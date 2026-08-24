@@ -71,20 +71,21 @@ top-to-bottom, or jump to the page you need.
 | 18 | [Recovery, teardown & housekeeping](recovery.md) | `doctor --fix`, `shared doctor`, `gc`, `workspace destroy`, `uninstall`. |
 | 19 | [The global store (~/.devstack)](store.md) | The `store` group — config, templates, shared, snapshots. |
 | 20 | [Aliases & argv[0] dispatch](aliases.md) | The `alias` group and `--as`. |
+| 21 | [AI agents](ai-agents.md) | The `ai` group — docs, the command catalog, JSON Schemas, and the rules an agent must follow. |
 
 ### Reference
 
 | # | Page | What it covers |
 |---|---|---|
-| 21 | [Full config reference](config-reference.md) | Every `workspace.yaml` / `devstack.yaml` field + the grammars. |
-| 22 | [Command reference](command-reference.md) | Every command, terse, grouped by area. |
-| 23 | [Global flags & scripting](global-flags.md) | `--json`/`--quiet`/`--debug`/`--verbose`, the `--yes` rule, `--check`, CI recipes. |
+| 22 | [Full config reference](config-reference.md) | Every `workspace.yaml` / `devstack.yaml` field + the grammars. |
+| 23 | [Command reference](command-reference.md) | Every command, terse, grouped by area. |
+| 24 | [Global flags & scripting](global-flags.md) | `--json`/`--quiet`/`--debug`/`--verbose`, the `--yes` rule, `--check`, CI recipes. |
 
 ### Roadmap
 
 | # | Page | What it covers |
 |---|---|---|
-| 24 | [What's next: roadmap & current gaps](whats-next.md) | What ships today vs. what's on the roadmap or still a gap. |
+| 25 | [What's next: roadmap & current gaps](whats-next.md) | What ships today vs. what's on the roadmap or still a gap. |
 
 ---
 

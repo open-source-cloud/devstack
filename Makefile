@@ -69,9 +69,9 @@ cross: ## Cross-compile the 4 CGO-free release targets (build-only, output disca
 	  GOOS=$${t%/*} GOARCH=$${t#*/} CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o /dev/null ./cmd/devstack; \
 	done
 
-ci: fmt-check vet build test-race ## What CI runs
+ci: fmt-check vet build test-race ai-check ## What CI runs
 
-nightly: fmt-check vet cross test-race determinism ## Full nightly gate (make ci + 4-target cross-build + determinism)
+nightly: fmt-check vet cross test-race determinism ai-check ## Full nightly gate (make ci + 4-target cross-build + determinism)
 
 determinism: build ## Assert generation is byte-identical across runs/paths (M1, spec 02)
 	@set -eu; \
@@ -88,6 +88,21 @@ determinism: build ## Assert generation is byte-identical across runs/paths (M1,
 	  echo "FAIL: generated artifacts differ between runs:"; diff -r "$$a" "$$b"; exit 1; \
 	fi; \
 	DEVSTACK_WORKSPACE="$$a" "$$bin" generate --check --quiet || { echo "FAIL: --check reports drift after generate"; exit 1; }
+
+ai-check: build ## Assert the emitted agent files are current + deterministic (spec 32)
+	@set -eu; \
+	bin="$$PWD/dist/$(BINARY)"; \
+	"$$bin" ai check || { echo "FAIL: this repo's own agent artifacts are stale; run \`$(BINARY) ai install\`"; exit 1; }; \
+	a="$$(mktemp -d)"; b="$$(mktemp -d)"; \
+	trap 'rm -rf "$$a" "$$b"' EXIT; \
+	(cd "$$a" && "$$bin" ai install --quiet); \
+	(cd "$$b" && "$$bin" ai install --quiet); \
+	if diff -r "$$a" "$$b" >/dev/null; then \
+	  printf '\033[32mok\033[0m  agent artifacts are byte-deterministic across paths\n'; \
+	else \
+	  echo "FAIL: emitted agent artifacts differ between runs:"; diff -r "$$a" "$$b"; exit 1; \
+	fi; \
+	(cd "$$a" && "$$bin" ai check --quiet) || { echo "FAIL: --check reports drift right after install"; exit 1; }
 
 install: build ## Install the binary into $(BINDIR) (override with PREFIX= or XDG_BIN_HOME=)
 	@install -d "$(BINDIR)"
@@ -133,6 +148,14 @@ smoke: build ## Exercise the built binary end-to-end in an isolated XDG sandbox
 	DEVSTACK_WORKSPACE="$$ws" "$$bin" generate --check --quiet || { echo "FAIL: generate --check stale after generate"; exit 1; }; \
 	echo "-> template list shows the built-ins"; \
 	"$$bin" template list | grep -q 'php.laravel.nginx' || { echo "FAIL: template list missing built-in"; exit 1; }; \
+	"$$bin" template list | grep -q 'php.laravel.nginx' || { echo "FAIL: template list missing built-in"; exit 1; }; \
+	echo "-> the agent surface answers with no workspace (spec 32)"; \
+	"$$bin" ai docs | grep -q 'guide/templates' || { echo "FAIL: ai docs does not list the corpus"; exit 1; }; \
+	"$$bin" ai docs guide/templates | grep -q '# Templates' || { echo "FAIL: ai docs cannot print a document"; exit 1; }; \
+	"$$bin" --json ai commands | grep -q '"path": "up"' || { echo "FAIL: ai commands missing the command tree"; exit 1; }; \
+	"$$bin" config schema --kind workspace | grep -q '"shared"' || { echo "FAIL: config schema is not the workspace schema"; exit 1; }; \
+	echo "-> ai install is idempotent in a fresh repo"; \
+	( cd "$$sandbox" && "$$bin" ai install --quiet && "$$bin" ai check --quiet ) || { echo "FAIL: ai install/check round-trip"; exit 1; }; \
 	printf '\n\033[32mok\033[0m  smoke passed\n'
 
 clean:

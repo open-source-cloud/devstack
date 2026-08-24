@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/open-source-cloud/devstack/main/schemas/workspace.schema.json",
+  "title": "devstack workspace (workspace.yaml)",
+  "description": "The workspace root file — the shared layer: shared infrastructure services, secret providers, network/proxy/tunnel, the Docker backend, service slices, and the project list. Hand-authored per DECISIONS D16; the Go validator in internal/config is the source of truth and a CI round-trip test keeps the two aligned.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "name"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "devstack/v1" },
+    "kind": { "const": "Workspace" },
+    "name": { "$ref": "#/$defs/dsname", "description": "Workspace name. Used for the compose project prefix and the ledger key." },
+    "aliases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dsname" },
+      "description": "Alternate argv[0] names this workspace answers to."
+    },
+    "profiles": {
+      "type": "object",
+      "description": "The env OVERLAY selector, distinct from the service slices in `groups`.",
+      "additionalProperties": false,
+      "properties": {
+        "default": { "type": "string", "description": "Default overlay name. Defaults to dev. Available as ${profile}." }
+      }
+    },
+    "defaultProfile": {
+      "type": "string",
+      "description": "The service slice `up` activates when no --profile is given (spec 12)."
+    },
+    "groups": {
+      "type": "object",
+      "description": "Named workspace-level service slices (spec 12).",
+      "propertyNames": { "$ref": "#/$defs/dsname" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "services": { "type": "array", "items": { "type": "string" } },
+          "memoryHintMB": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "memoryBudgetMB": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Warn when the active services' memoryMB sum exceeds this."
+    },
+    "secrets": {
+      "type": "object",
+      "description": "Providers that resolve secret:// refs (spec 04). Values are never written to generated files.",
+      "additionalProperties": false,
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "kind"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "$ref": "#/$defs/dsname" },
+              "kind": { "type": "string", "description": "Provider backend, e.g. sops, aws, infisical." },
+              "env": { "type": "string" },
+              "projectId": { "type": "string" },
+              "region": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "description": "Reverse proxy and public-tunnel config (spec 05).",
+      "additionalProperties": false,
+      "properties": {
+        "proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "engine": { "enum": ["caddy", "traefik", "nginx"] },
+            "httpsLocal": { "type": "boolean", "description": "Opt in to local HTTPS at https://<svc>.<project>.localhost." }
+          }
+        },
+        "tunnel": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "provider": { "type": "string" },
+            "hostname": { "type": "string" }
+          }
+        }
+      }
+    },
+    "backend": {
+      "type": "object",
+      "title": "Docker backend",
+      "description": "Where the shared stack runs (spec 21). Omit for the local daemon. Set exactly one of context or host.",
+      "additionalProperties": false,
+      "properties": {
+        "context": { "type": "string", "description": "A `docker context` name, typically an ssh:// one." },
+        "host": { "$ref": "#/$defs/dockerhost" }
+      },
+      "not": { "required": ["context", "host"] }
+    },
+    "shared": {
+      "type": "object",
+      "description": "Shared infrastructure services, keyed by name. Reached over the shared network by the DNS alias shared-<name>, never the bare service name.",
+      "propertyNames": { "$ref": "#/$defs/dsname" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["template"],
+        "additionalProperties": false,
+        "properties": {
+          "template": { "type": "string", "description": "An engine template ref (one that declares provides:), e.g. postgres, redis, minio." },
+          "params": { "$ref": "#/$defs/params" },
+          "resources": { "$ref": "#/$defs/resources" },
+          "platform": { "$ref": "#/$defs/platform" }
+        }
+      }
+    },
+    "projects": {
+      "type": "array",
+      "description": "Repos containing a devstack.yaml.",
+      "items": {
+        "type": "object",
+        "required": ["name", "path"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "$ref": "#/$defs/dsname", "description": "Must match the name inside that repo's devstack.yaml." },
+          "path": { "type": "string", "description": "Path to the repo, relative to the workspace root." },
+          "git": { "type": "string", "description": "Clone URL for `devstack ws clone`. Shorthand like owner/repo is expanded." }
+        }
+      }
+    },
+    "hooks": { "$ref": "#/$defs/hooks" }
+  },
+  "$defs": {
+    "dsname": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+      "description": "Compose/DNS-safe identifier: lowercase, starts with a letter, up to 63 chars of [a-z0-9_-]."
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "description": "A Go/Compose duration string, e.g. \"5s\", \"1m30s\"."
+    },
+    "cpus": {
+      "type": "string",
+      "pattern": "^[0-9]*\\.?[0-9]+$",
+      "description": "Fractional cores as a string, e.g. \"1.5\". Must be greater than zero."
+    },
+    "platform": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$",
+      "description": "An os/arch[/variant] selector, e.g. linux/amd64, linux/arm64/v8."
+    },
+    "envMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Literal environment variables. Values support ${env.NAME}, ${self.attr}, ${ref:...}, ${profile} and ${workspace.name} interpolation, plus secret://provider/path#key refs."
+    },
+    "params": {
+      "type": "object",
+      "description": "Template parameters. Accepted keys and types are declared by the template's params: block (see `devstack template list --json`).",
+      "additionalProperties": true
+    },
+    "resources": {
+      "type": "object",
+      "title": "Resource limits",
+      "description": "CPU/memory/PID limits (spec 18). Lowered to BOTH deploy.resources.limits.* and the legacy top-level cpus/mem_limit/pids_limit.",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": { "$ref": "#/$defs/cpus" },
+        "memoryMB": { "type": "integer", "minimum": 0, "description": "Hard memory limit in MB." },
+        "memoryReserveMB": { "type": "integer", "minimum": 0, "description": "Soft memory reservation in MB (scheduling hint)." },
+        "pidsLimit": { "type": "integer", "minimum": 0, "description": "Maximum number of PIDs." }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "title": "Lifecycle hook",
+      "description": "One declarative command run at a saga phase (spec 11).",
+      "required": ["name", "run", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/dsname" },
+        "run": { "enum": ["host", "exec"], "description": "host runs via os/exec on the host; exec shells into a running service with `compose exec -T`." },
+        "service": { "type": "string", "description": "Target service. Required when run: exec." },
+        "command": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "argv array — never shell-split by devstack." },
+        "workdir": { "type": "string" },
+        "env": { "$ref": "#/$defs/envMap" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "retries": { "type": "integer", "minimum": 0 },
+        "onFailure": { "enum": ["abort", "warn", "continue"] },
+        "once": { "type": "boolean", "description": "Run at most once per workspace (firstRun ledger)." }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "title": "Lifecycle hooks",
+      "description": "Hooks grouped by saga phase (spec 11). Lists REPLACE on overlay merge unless the YAML opts into `$merge: append`.",
+      "additionalProperties": false,
+      "properties": {
+        "preUp":    { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "firstRun": { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "postUp":   { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "postPull": { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "preDown":  { "type": "array", "items": { "$ref": "#/$defs/hook" } }
+      }
+    }
+,
+    "dockerhost": {
+      "type": "string",
+      "pattern": "^(ssh|tcp|unix|npipe|fd)://.+",
+      "description": "A DOCKER_HOST endpoint. ssh:// is the primary remote path (inherits your SSH config/agent/ProxyJump)."
+    }
+  }
+}
