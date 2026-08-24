@@ -1,0 +1,52 @@
+schemaVersion: 1
+description: "Ruby on Rails dev server (bin/rails server) with Rails' built-in code reloader."
+params:
+  rubyVersion:
+    type: string
+    default: "3.4-slim-trixie"
+    description: "Ruby image tag."
+  port:
+    type: int
+    default: 3000
+    description: "Rails HTTP port."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      RUBY_VERSION: "[[ .params.rubyVersion ]]"
+  restart: unless-stopped
+  environment:
+    RAILS_ENV: development
+    # rails server binds `localhost` in development, so the port would be
+    # published but every connection refused. -b 0.0.0.0 below is the real fix;
+    # BINDING is the env form Rails also honours.
+    BINDING: "0.0.0.0"
+    PORT: "[[ .params.port ]]"
+    # Rails 7+ host authorization returns "Blocked host" for anything not listed.
+    # Add the service's DNS name so in-network callers work too.
+    RAILS_DEVELOPMENT_HOSTS: ".localhost,.local,app"
+    GEM_HOME: /usr/local/bundle
+    BUNDLE_APP_CONFIG: /usr/local/bundle
+    BOOTSNAP_CACHE_DIR: /tmp/bootsnap
+  # No polling flag needed: Rails' default ActiveSupport::FileUpdateChecker stats
+  # files per request, so it already works over 9p/WSL2.
+  #
+  # The rm is not cosmetic: rails writes tmp/pids/server.pid inside the bind
+  # mount, so a container killed with SIGKILL leaves a stale pidfile on the HOST
+  # and the next start dies with "A server is already running".
+  command:
+    - "sh"
+    - "-lc"
+    - >-
+      rm -f tmp/pids/server.pid;
+      bundle check || bundle install;
+      exec bin/rails server -b 0.0.0.0 -p [[ .params.port ]]
+  volumes:
+    - "..:/app"
+    # Gems live outside the bind mount so it cannot shadow them.
+    - "bundlegems:/usr/local/bundle"
+
+volumes:
+  bundlegems: {}

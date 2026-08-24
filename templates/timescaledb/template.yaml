@@ -1,0 +1,48 @@
+schemaVersion: 1
+description: "Shared TimescaleDB engine (PostgreSQL + time-series), reached over the shared network at shared-timescaledb:5432."
+provides: timescaledb
+exports: [host, port, user, password, database]
+defaultPort: 5432
+params:
+  version:
+    type: string
+    default: "pg18"
+    description: "Image tag. There is NO :latest on timescale/timescaledb-ha — always a pgNN tag."
+  rootUser:
+    type: string
+    default: devstack
+    description: "Superuser created on first boot."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Superuser password (local development)."
+  database:
+    type: string
+    default: devstack
+    description: "Database created on first boot."
+
+service:
+  image: "timescale/timescaledb-ha:[[ .params.version ]]"
+  restart: unless-stopped
+  # POSTGRES_* are fully supported: this entrypoint is an explicit fork of the
+  # official postgres one. The timescaledb extension is preloaded by the image.
+  environment:
+    POSTGRES_USER: "[[ .params.rootUser ]]"
+    POSTGRES_PASSWORD: "[[ .params.rootPassword ]]"
+    POSTGRES_DB: "[[ .params.database ]]"
+  volumes:
+    # NOT the path the plain postgres template uses. This image is not built on
+    # docker-library/postgres: PGROOT is /home/postgres and PGDATA has always been
+    # /home/postgres/pgdata/data, so the PG18 PGDATA move (DECISIONS D8) does not
+    # apply here. Mount the PARENT — the image pre-chowns the whole tree to the
+    # non-root postgres user.
+    - "timescaledata:/home/postgres/pgdata"
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U [[ .params.rootUser ]] || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 30s
+
+volumes:
+  timescaledata: {}

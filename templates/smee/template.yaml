@@ -1,0 +1,38 @@
+schemaVersion: 1
+description: "smee.io webhook forwarder — relays public webhook deliveries to a service inside the workspace."
+params:
+  nodeVersion:
+    type: string
+    default: "24"
+    description: "Node major version image tag."
+  target:
+    type: string
+    default: "http://app:3000/webhooks"
+    description: "Where to POST deliveries, as an in-network URL. Set this to your own service — the default is a placeholder and will just log connection errors. Use the service name, not localhost."
+  channel:
+    type: string
+    default: ""
+    description: "The smee.io channel URL. Leave empty and smee creates a new channel and prints it in the logs on first start."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  environment:
+    SMEE_URL: "[[ .params.channel ]]"
+    SMEE_TARGET: "[[ .params.target ]]"
+  # smee-client is a pure OUTBOUND relay: it opens an SSE connection to smee.io
+  # and POSTs each delivery to --target. It never binds a listening socket, so
+  # this service has no port, nothing to EXPOSE and nothing to expose to the host.
+  #
+  # There is also nothing to hot-reload — no source, no watcher — so unlike every
+  # other app template here it takes no bind mount and no polling env.
+  command:
+    - "sh"
+    - "-lc"
+    - >-
+      if [ -n "$SMEE_URL" ]; then exec smee --url "$SMEE_URL" --target "$SMEE_TARGET";
+      else exec smee --target "$SMEE_TARGET"; fi

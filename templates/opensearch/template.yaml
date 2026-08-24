@@ -1,0 +1,51 @@
+schemaVersion: 1
+description: "Shared OpenSearch engine (single node, security disabled), reached over the shared network at shared-opensearch:9200."
+provides: opensearch
+exports: [host, port, endpoint]
+defaultPort: 9200
+params:
+  version:
+    type: string
+    default: "3.8.0"
+    description: "OpenSearch image tag."
+  heapSize:
+    type: string
+    default: "512m"
+    description: "JVM heap (Xms and Xmx are set to the same value). The container still wants ~1.5-2GB RSS on top."
+  clusterName:
+    type: string
+    default: devstack
+    description: "cluster.name."
+
+service:
+  image: "opensearchproject/opensearch:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    discovery.type: single-node
+    cluster.name: "[[ .params.clusterName ]]"
+    node.name: opensearch
+    # Security off: this is a local dev search engine on a tool-owned network.
+    # With it off there is no user or password at all, which is why exports carry
+    # only host/port/endpoint.
+    DISABLE_SECURITY_PLUGIN: "true"
+    DISABLE_INSTALL_DEMO_CONFIG: "true"
+    DISABLE_PERFORMANCE_ANALYZER_AGENT_CLI: "true"
+    OPENSEARCH_JAVA_OPTS: "-Xms[[ .params.heapSize ]] -Xmx[[ .params.heapSize ]]"
+    # Deliberately NOT setting bootstrap.memory_lock: it is only safe paired with
+    # a memlock ulimit of -1, and without that the node refuses to start.
+  ulimits:
+    nofile:
+      soft: 65536
+      hard: 65536
+  volumes:
+    - "opensearchdata:/usr/share/opensearch/data"
+  healthcheck:
+    # curl ships in the Amazon Linux 2023 base.
+    test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 40s
+
+volumes:
+  opensearchdata: {}

@@ -1,0 +1,33 @@
+schemaVersion: 1
+extends: python.app
+description: "FastAPI dev server on uvicorn with --reload (extends python.app)."
+params:
+  appModule:
+    type: string
+    default: "app.main:app"
+    description: "The ASGI application import path passed to uvicorn."
+
+service:
+  environment:
+    APP_MODULE: "[[ .params.appModule ]]"
+    # uvicorn's reloader is watchfiles, which uses inotify — that does not cross a
+    # Docker Desktop/WSL2 bind mount. Forcing polling is what makes reload work.
+    WATCHFILES_FORCE_POLLING: "true"
+    WATCHFILES_POLL_DELAY_MS: "500"
+  # Sync deps at start so a teammate adding one does not need an image rebuild,
+  # then exec so uvicorn is PID 1 and `compose stop` reaches it directly instead
+  # of timing out after 10s.
+  #
+  # --host 0.0.0.0 is mandatory: uvicorn defaults to 127.0.0.1 and would be
+  # unreachable. (The same trap bites `fastapi dev`, which also binds 127.0.0.1 —
+  # only `fastapi run` binds 0.0.0.0.)
+  #
+  # --reload-dir /app keeps the watcher off site-packages.
+  command:
+    - "sh"
+    - "-lc"
+    - >-
+      if [ -f uv.lock ]; then uv sync --frozen;
+      elif [ -f pyproject.toml ]; then uv sync;
+      elif [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi;
+      exec uvicorn "${APP_MODULE}" --host 0.0.0.0 --port [[ .params.port ]] --reload --reload-dir /app

@@ -1,0 +1,52 @@
+schemaVersion: 1
+description: "Shared ClickHouse OLAP engine, reached over the shared network at shared-clickhouse:8123 (HTTP) or :9000 (native)."
+provides: clickhouse
+exports: [host, port, user, password, database]
+defaultPort: 8123
+params:
+  version:
+    type: string
+    default: "26.3"
+    description: "ClickHouse server image tag."
+  rootUser:
+    type: string
+    default: devstack
+    description: "Application user. Setting this REMOVES the built-in `default` user."
+  rootPassword:
+    type: string
+    default: devstack
+    description: "Password for the application user."
+  database:
+    type: string
+    default: devstack
+    description: "Database created on first boot only (ignored once the volume has data)."
+
+service:
+  image: "clickhouse/clickhouse-server:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    # Not optional: with neither CLICKHOUSE_USER nor CLICKHOUSE_PASSWORD set, the
+    # entrypoint DISABLES network access entirely and the server is unreachable.
+    # Setting them also deletes the built-in `default` user, which is what we want.
+    CLICKHOUSE_USER: "[[ .params.rootUser ]]"
+    CLICKHOUSE_PASSWORD: "[[ .params.rootPassword ]]"
+    CLICKHOUSE_DB: "[[ .params.database ]]"
+    CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+  # Docker's default 1024 file descriptors is far below what MergeTree needs; every
+  # official example passes this.
+  ulimits:
+    nofile:
+      soft: 262144
+      hard: 262144
+  volumes:
+    - "clickhousedata:/var/lib/clickhouse"
+  healthcheck:
+    # wget is installed, curl is NOT. This is the image's own probe.
+    test: ["CMD", "wget", "--spider", "-q", "-T", "2", "http://127.0.0.1:8123/ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 6
+    start_period: 20s
+
+volumes:
+  clickhousedata: {}

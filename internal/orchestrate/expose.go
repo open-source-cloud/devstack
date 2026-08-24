@@ -62,6 +62,30 @@ var exposeEngines = map[string][]exposePort{
 	"nats":       {{4222, "nats", "nats-expose", 4222, true}, {8222, "monitor", "nats-monitor-expose", 8222, false}},
 	"kafka":      {{19092, "kafka", "kafka-provision", 49092, true}},
 	"rabbitmq":   {{5672, "amqp", "rmq-expose", 5672, true}, {15672, "management", "rmq-mgmt-expose", 15672, false}},
+
+	// Stores and caches.
+	"valkey":      {{6379, "valkey", "valkey-expose", 6379, true}},
+	"timescaledb": {{5432, "postgres", "timescale-expose", 5432, true}},
+	"clickhouse":  {{8123, "http", "clickhouse-expose", 8123, true}, {9000, "native", "clickhouse-native-expose", 9000, false}},
+	"neo4j":       {{7687, "bolt", "neo4j-expose", 7687, true}, {7474, "browser", "neo4j-browser-expose", 7474, false}},
+	"etcd":        {{2379, "etcd", "etcd-expose", 2379, true}},
+	"consul":      {{8500, "http", "consul-expose", 8500, true}},
+
+	// Object storage. rustfs speaks the S3 API on the same ports MinIO uses, so
+	// the two only collide on the host when both are declared — the allocator
+	// then drifts the second one off its base.
+	"rustfs": {{9000, "s3", "rustfs-expose", 9000, true}, {9001, "console", "rustfs-console-expose", 9001, false}},
+
+	// Search.
+	"meilisearch": {{7700, "http", "meili-expose", 7700, true}},
+	"opensearch":  {{9200, "http", "opensearch-expose", 9200, true}},
+
+	// Developer-facing services. These are the ones a HUMAN opens in a browser,
+	// so their secondary UI ports matter more than usual.
+	"mailpit":   {{1025, "smtp", "mailpit-expose", 1025, true}, {8025, "web", "mailpit-web-expose", 8025, false}},
+	"keycloak":  {{8080, "http", "keycloak-expose", 8080, true}},
+	"jaeger":    {{4317, "otlp-grpc", "jaeger-expose", 4317, true}, {16686, "ui", "jaeger-ui-expose", 16686, false}},
+	"mosquitto": {{1883, "mqtt", "mosquitto-expose", 1883, true}},
 }
 
 // ExposableEngine reports whether an engine has a defined host-expose port set.
@@ -416,6 +440,52 @@ func connectionURL(engine string, ep exposePort, params map[string]any, port int
 		}
 		user := paramString(params, "user", "devstack")
 		return fmt.Sprintf("amqp://%s@%s", user, host)
+
+	case "valkey":
+		return "redis://" + host // Valkey speaks the RESP protocol; redis:// clients work unchanged
+	case "timescaledb":
+		user := paramString(params, "rootUser", "devstack")
+		pass := paramString(params, "rootPassword", "devstack")
+		db := paramString(params, "database", "devstack")
+		return fmt.Sprintf("postgres://%s:%s@%s/%s?sslmode=disable", user, pass, host, db)
+	case "clickhouse":
+		user := paramString(params, "rootUser", "devstack")
+		pass := paramString(params, "rootPassword", "devstack")
+		if ep.label == "native" {
+			return fmt.Sprintf("clickhouse://%s:%s@%s", user, pass, host)
+		}
+		return fmt.Sprintf("http://%s:%s@%s", user, pass, host)
+	case "neo4j":
+		if ep.label == "browser" {
+			return "http://" + host
+		}
+		user := paramString(params, "rootUser", "neo4j")
+		pass := paramString(params, "rootPassword", "devstack1")
+		return fmt.Sprintf("bolt://%s:%s@%s", user, pass, host)
+	case "etcd":
+		return "http://" + host
+	case "consul":
+		return "http://" + host // API and the web UI share this port (/ui)
+	case "rustfs":
+		return "http://" + host // S3 endpoint / console URL, same shape as minio
+	case "meilisearch":
+		return "http://" + host
+	case "opensearch":
+		return "http://" + host
+	case "mailpit":
+		if ep.label == "web" {
+			return "http://" + host // the inbox a human opens
+		}
+		return "smtp://" + host
+	case "keycloak":
+		return "http://" + host
+	case "jaeger":
+		if ep.label == "ui" {
+			return "http://" + host
+		}
+		return host // OTLP gRPC endpoint: host:port, no scheme
+	case "mosquitto":
+		return "mqtt://" + host
 	}
 	return host
 }

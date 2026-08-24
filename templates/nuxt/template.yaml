@@ -1,0 +1,34 @@
+schemaVersion: 1
+description: "Nuxt dev server with HMR (needs TWO ports — see below)."
+params:
+  nodeVersion:
+    type: string
+    default: "24"
+    description: "Node major version image tag."
+  port:
+    type: int
+    default: 3000
+    description: "Nuxt HTTP port."
+  hmrPort:
+    type: int
+    default: 24678
+    description: "Vite HMR websocket port. Nuxt runs Vite in middleware mode behind its own Nitro server, so HMR cannot share the HTTP port the way plain Vite does."
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  # The bare `--` is load-bearing. Also note `-h` is Nuxt's SHORT FLAG FOR --host,
+  # not --help — `nuxt dev -h` binds a host rather than printing help.
+  command: ["sh", "-lc", "npm install && npm run dev -- --host 0.0.0.0 --port [[ .params.port ]]"]
+  environment:
+    NODE_ENV: development
+    NUXT_HOST: "0.0.0.0"
+    NUXT_PORT: "[[ .params.port ]]"
+    CHOKIDAR_USEPOLLING: "true"
+    CHOKIDAR_INTERVAL: "300"
+  volumes:
+    - "..:/app"
+    - "/app/node_modules"

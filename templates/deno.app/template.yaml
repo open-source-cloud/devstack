@@ -1,0 +1,44 @@
+schemaVersion: 1
+description: "Deno dev server with the built-in watcher (deno run --watch)."
+params:
+  denoVersion:
+    type: string
+    default: "2.9.5"
+    description: "Deno image tag."
+  entrypoint:
+    type: string
+    default: "main.ts"
+    description: "Module to run."
+  port:
+    type: int
+    default: 8000
+    description: "Port your server listens on. Deno.serve() already defaults to 0.0.0.0:8000."
+
+service:
+  image: "denoland/deno:[[ .params.denoVersion ]]"
+  restart: unless-stopped
+  working_dir: /app
+  environment:
+    DENO_DIR: /deno-dir/
+    HOST: "0.0.0.0"
+    PORT: "[[ .params.port ]]"
+  # The image's ENTRYPOINT already execs `deno "$@"`, so the command must NOT
+  # repeat `deno` — doing so runs `deno deno run …` and fails.
+  #
+  # Binding needs no fix: Deno.serve() defaults to 0.0.0.0.
+  #
+  # Caveat: Deno's watcher has no polling fallback (no flag, no env var), so on
+  # WSL2/9p bind mounts where inotify does not propagate, reload will not fire.
+  command:
+    - "run"
+    - "--watch"
+    - "--allow-net"
+    - "--allow-env"
+    - "--allow-read"
+    - "[[ .params.entrypoint ]]"
+  volumes:
+    - "..:/app"
+    - "denocache:/deno-dir"
+
+volumes:
+  denocache: {}

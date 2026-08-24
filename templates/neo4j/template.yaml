@@ -1,0 +1,44 @@
+schemaVersion: 1
+description: "Shared Neo4j graph database, reached over the shared network at shared-neo4j:7687 (Bolt); browser on 7474."
+provides: neo4j
+exports: [host, port, user, password, database]
+defaultPort: 7687
+params:
+  version:
+    type: string
+    default: "2026.07.1"
+    description: "Neo4j image tag (calendar-versioned since 2025)."
+  rootUser:
+    type: string
+    default: neo4j
+    description: "Neo4j only supports the built-in `neo4j` administrator on first boot."
+  rootPassword:
+    type: string
+    default: devstack1
+    description: "Must be at least 8 characters — a shorter one makes the container exit at startup."
+
+service:
+  image: "neo4j:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    # Applied ONLY when the auth store under /data is empty. On a later start with
+    # a populated volume this is silently ignored and the stored password wins.
+    NEO4J_AUTH: "[[ .params.rootUser ]]/[[ .params.rootPassword ]]"
+  volumes:
+    # The image declares VOLUME /data /logs. /logs is mounted too so Docker does
+    # not create a fresh anonymous volume on every run.
+    - "neo4jdata:/data"
+    - "neo4jlogs:/logs"
+  healthcheck:
+    # curl is explicitly purged from this image; wget survives. 7474 is the HTTP
+    # port — the Bolt port does not speak HTTP, so probe 7474 even though drivers
+    # connect on 7687.
+    test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider localhost:7474 || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 10
+    start_period: 30s
+
+volumes:
+  neo4jdata: {}
+  neo4jlogs: {}

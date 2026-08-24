@@ -1,0 +1,44 @@
+schemaVersion: 1
+description: "Rust dev server with rebuild-on-change (bacon). Framework-agnostic — axum/actix/rocket are libraries, not different containers."
+params:
+  rustVersion:
+    type: string
+    default: "1.98"
+    description: "Rust image tag. Uses the FULL image, not -slim: slim strips the tooling bacon needs to build."
+  port:
+    type: int
+    default: 3000
+    description: "Port your server listens on. Bind 0.0.0.0, not 127.0.0.1."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      RUST_VERSION: "[[ .params.rustVersion ]]"
+  restart: unless-stopped
+  environment:
+    HOST: "0.0.0.0"
+    PORT: "[[ .params.port ]]"
+    ROCKET_ADDRESS: "0.0.0.0"
+    RUST_BACKTRACE: "1"
+    # Build artifacts go to a named volume, NOT into the user's bind-mounted
+    # target/ — keeps container artifacts out of the host tree and makes rebuilds
+    # survive a recreate.
+    CARGO_TARGET_DIR: /target
+    CARGO_INCREMENTAL: "1"
+  # --headless because bacon is a TUI and would render screen redraws into logs.
+  # -j run-long (NOT -j run): `run` is background=true and buffers output until the
+  # process exits, which for a server is never. `run-long` is bacon's shipped job
+  # for long-running processes.
+  command: ["bacon", "--headless", "-j", "run-long"]
+  volumes:
+    - "..:/app"
+    # NAMED, not anonymous: an anonymous volume is dropped by `compose down -v`,
+    # and losing target/ costs a full cold rebuild.
+    - "cargotarget:/target"
+    - "cargoregistry:/usr/local/cargo/registry"
+
+volumes:
+  cargotarget: {}
+  cargoregistry: {}

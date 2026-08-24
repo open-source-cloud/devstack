@@ -1,0 +1,30 @@
+schemaVersion: 1
+extends: python.app
+description: "Django dev server (manage.py runserver) with the built-in autoreloader (extends python.app)."
+params:
+  allowedHosts:
+    type: string
+    default: "*"
+    description: "DJANGO_ALLOWED_HOSTS. Wide open is correct for local dev — see the note below."
+
+service:
+  environment:
+    DJANGO_DEBUG: "1"
+    # The #1 Django-in-a-container failure: with DEBUG=True and an empty
+    # ALLOWED_HOSTS, Django only accepts Host headers matching .localhost,
+    # 127.0.0.1 and [::1] — so a request to shared-network DNS or a published
+    # host port returns 400 Bad Request. Your settings.py must actually read this.
+    DJANGO_ALLOWED_HOSTS: "[[ .params.allowedHosts ]]"
+  # No polling env var is needed and none should be added: Django's StatReloader
+  # already polls once a second, so it is the one framework here that hot-reloads
+  # correctly over 9p/WSL2 out of the box. Do NOT add pywatchman.
+  #
+  # 0.0.0.0:PORT is mandatory — a bare `runserver` binds 127.0.0.1.
+  command:
+    - "sh"
+    - "-lc"
+    - >-
+      if [ -f uv.lock ]; then uv sync --frozen;
+      elif [ -f pyproject.toml ]; then uv sync;
+      elif [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi;
+      exec python manage.py runserver 0.0.0.0:[[ .params.port ]]

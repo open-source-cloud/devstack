@@ -1,0 +1,51 @@
+schemaVersion: 1
+description: "Go dev server with hot reload (air). Framework-agnostic — chi/gin/echo/fiber are libraries, not different containers."
+params:
+  goVersion:
+    type: string
+    default: "1.27"
+    description: "Go major.minor image tag. air requires go >= 1.26, and every official golang image bakes in GOTOOLCHAIN=local, so an older tag fails to install air."
+  port:
+    type: int
+    default: 8080
+    description: "Port your server listens on. Bind 0.0.0.0, not localhost — see below."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      GO_VERSION: "[[ .params.goVersion ]]"
+  restart: unless-stopped
+  environment:
+    # air does NOT open the socket — your code does. http.ListenAndServe("localhost:8080", h)
+    # binds container loopback and is unreachable from the shared network. Read
+    # these and bind 0.0.0.0.
+    HOST: "0.0.0.0"
+    PORT: "[[ .params.port ]]"
+    ADDR: "0.0.0.0:[[ .params.port ]]"
+    # The bind-mounted source is not a git checkout from the container's view.
+    GOFLAGS: "-buildvcs=false"
+    CGO_ENABLED: "0"
+    # Caches live outside the bind mount, which is why — unlike node_modules —
+    # no anonymous volume is needed here.
+    GOMODCACHE: /gomodcache
+    GOCACHE: /gocache
+  # --build.poll is what makes reload work on WSL2/9p and Docker Desktop, where
+  # inotify does not cross the bind mount. air defaults to fsnotify (poll = false).
+  command:
+    - "air"
+    - "--build.cmd=go build -o /tmp/main ./..."
+    - "--build.bin=/tmp/main"
+    - "--build.poll=true"
+    - "--build.poll_interval=500"
+    - "--build.send_interrupt=true"
+  volumes:
+    # compose lives in <project>/.devstack, so ".." is the project source.
+    - "..:/app"
+    - "gomodcache:/gomodcache"
+    - "gocache:/gocache"
+
+volumes:
+  gomodcache: {}
+  gocache: {}

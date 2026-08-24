@@ -1,0 +1,36 @@
+schemaVersion: 1
+description: "Phoenix dev server (mix phx.server) with code and asset reload."
+params:
+  elixirVersion:
+    type: string
+    default: "1.20-otp-28"
+    description: "Elixir image tag (elixir:<version>-otp-<otp>)."
+  port:
+    type: int
+    default: 4000
+    description: "Phoenix HTTP port."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      ELIXIR_VERSION: "[[ .params.elixirVersion ]]"
+  restart: unless-stopped
+  environment:
+    MIX_ENV: dev
+    PORT: "[[ .params.port ]]"
+    LANG: C.UTF-8
+    ERL_AFLAGS: "-kernel shell_history enabled"
+  # YOU MUST EDIT config/dev.exs. Phoenix's generated dev config binds LOOPBACK
+  # ONLY — `http: [ip: {127, 0, 0, 1}, port: 4000]` — and there is no environment
+  # variable that overrides it. Until you change that to {0, 0, 0, 0}, this
+  # service is unreachable from other containers and from a published host port,
+  # no matter what devstack does.
+  command: ["sh", "-lc", "mix deps.get && exec mix phx.server"]
+  volumes:
+    - "..:/app"
+    # TWO anonymous volumes, not one: the bind mount would otherwise clobber both
+    # of the trees the image build populated.
+    - "/app/deps"
+    - "/app/_build"

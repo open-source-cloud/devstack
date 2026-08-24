@@ -1,0 +1,30 @@
+schemaVersion: 1
+description: "Shared Eclipse Mosquitto MQTT broker, reached over the shared network at shared-mosquitto:1883."
+provides: mosquitto
+exports: [host, port]
+defaultPort: 1883
+params:
+  version:
+    type: string
+    default: "2.1.2-alpine"
+    description: "Mosquitto image tag. Stay on the 2.1 line: 2.0 images ship a config with no listener and no allow_anonymous, so they need a mounted conf to work at all."
+
+service:
+  image: "eclipse-mosquitto:[[ .params.version ]]"
+  restart: unless-stopped
+  # No config mount and no environment: the 2.1 image already ships a working
+  # anonymous config (listener 1883 + allow_anonymous true) at
+  # /mosquitto/config/mosquitto.conf. This image reads no environment variables —
+  # there is deliberately no MOSQUITTO_USERNAME/PASSWORD here, because none exist.
+  #
+  # Deliberately NO data volume: the shipped config enables no persistence, so a
+  # volume at /mosquitto/data would store nothing and imply durability the broker
+  # does not provide. A dev broker is ephemeral; retained messages and queued QoS
+  # 1/2 traffic do not survive a restart.
+  healthcheck:
+    # mosquitto_pub ships in the image and speaks the real protocol. There is no
+    # curl here, and 2.1's HTTP dashboard port is not enabled by default.
+    test: ["CMD", "mosquitto_pub", "-h", "127.0.0.1", "-p", "1883", "-t", "healthcheck", "-m", "ok", "-q", "1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5

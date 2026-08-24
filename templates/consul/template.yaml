@@ -1,0 +1,34 @@
+schemaVersion: 1
+description: "Shared Consul agent in dev mode (service discovery + KV), reached over the shared network at shared-consul:8500."
+provides: consul
+exports: [host, port, endpoint]
+defaultPort: 8500
+params:
+  version:
+    type: string
+    default: "2.0.3"
+    description: "Consul image tag. Note Consul is BUSL-1.1 licensed (licensor IBM) — fine for local development, but check your policy before adopting it more widely."
+  logLevel:
+    type: string
+    default: info
+    description: "Agent log level. -dev defaults to DEBUG, which is genuinely noisy."
+
+service:
+  image: "hashicorp/consul:[[ .params.version ]]"
+  restart: unless-stopped
+  # -dev gives an insecure single-node agent with the UI enabled on the same port
+  # as the API (:8500/ui) and ACLs in default-allow. -client 0.0.0.0 is what makes
+  # the API reachable from other containers; gossip and server RPC stay on
+  # loopback under -dev, so 8300/8301/8302 are not worth publishing.
+  command: ["agent", "-dev", "-client", "0.0.0.0", "-log-level=[[ .params.logLevel ]]"]
+  # Deliberately NO data volume: -dev keeps the entire state machine in RAM (raft
+  # uses an in-memory store), so a volume on /consul/data would persist nothing.
+  # Durable Consul means dropping -dev, which is a different template.
+  healthcheck:
+    # curl genuinely ships in this image. A leader address means the agent has
+    # elected itself and is serving.
+    test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8500/v1/status/leader | grep -q ':'"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
