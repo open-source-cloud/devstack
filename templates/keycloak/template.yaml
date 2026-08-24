@@ -1,0 +1,46 @@
+schemaVersion: 1
+description: "Shared Keycloak identity provider (dev mode), reached over the shared network at shared-keycloak:8080."
+provides: keycloak
+exports: [host, port, user, password, endpoint]
+defaultPort: 8080
+params:
+  version:
+    type: string
+    default: "26.7.2"
+    description: "Keycloak image tag. quay.io carries major.minor floats (26.7) and full patch tags — a bare major like `26` does NOT exist."
+  rootUser:
+    type: string
+    default: admin
+    description: "Bootstrap admin, seeded on FIRST start only."
+  rootPassword:
+    type: string
+    default: admin
+    description: "Bootstrap admin password (local development)."
+
+service:
+  image: "quay.io/keycloak/keycloak:[[ .params.version ]]"
+  restart: unless-stopped
+  # start-dev uses the file-backed H2 database under /opt/keycloak/data and always
+  # re-runs the Quarkus build on boot, so first start is slow. It is explicitly
+  # unsupported for production — this template is a dev identity provider.
+  command: ["start-dev"]
+  environment:
+    # Seeds the master realm on first start only; ignored against an existing volume.
+    KC_BOOTSTRAP_ADMIN_USERNAME: "[[ .params.rootUser ]]"
+    KC_BOOTSTRAP_ADMIN_PASSWORD: "[[ .params.rootPassword ]]"
+    # Port 9000 stays CLOSED without this, and the healthcheck below would never
+    # pass — which would abort the up saga rather than just look untidy.
+    KC_HEALTH_ENABLED: "true"
+  volumes:
+    - "keycloakdata:/opt/keycloak/data"
+  healthcheck:
+    # The image ships neither curl nor wget, so this uses bash's /dev/tcp — the
+    # same approach Keycloak's own documentation gives for container health.
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200 OK' <&3"]
+    interval: 10s
+    timeout: 5s
+    retries: 12
+    start_period: 40s
+
+volumes:
+  keycloakdata: {}

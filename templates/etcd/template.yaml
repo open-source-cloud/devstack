@@ -1,0 +1,46 @@
+schemaVersion: 1
+description: "Shared etcd key-value store, reached over the shared network at shared-etcd:2379."
+provides: etcd
+exports: [host, port, endpoint]
+defaultPort: 2379
+params:
+  version:
+    type: string
+    default: "v3.6.14"
+    description: "etcd image tag. MUST be a full vX.Y.Z — quay.io/coreos/etcd publishes no :latest and no floating :v3.6."
+  advertiseHost:
+    type: string
+    default: shared-etcd
+    description: "Hostname clients are told to dial. Defaults to the DNS alias of a shared service named `etcd`; override if you name the instance something else."
+
+service:
+  # quay.io/coreos/etcd is the etcd project's own registry. NOT bitnami/etcd:
+  # that repository went subscription-only in Aug 2025 and now has zero public
+  # tags, so any template referencing it fails to pull.
+  image: "quay.io/coreos/etcd:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    # Without this the data dir is ${name}.etcd resolved against the image's
+    # WORKDIR — i.e. /var/lib/etcd/default.etcd — so a volume mounted anywhere
+    # else silently persists nothing. Same class of trap as the PG18 PGDATA move.
+    ETCD_DATA_DIR: /etcd-data
+    # Default is localhost:2379, which answers only the container itself. Must be
+    # an IP literal: etcd's checkBindURLs rejects a DNS name here outright.
+    ETCD_LISTEN_CLIENT_URLS: "http://0.0.0.0:2379"
+    # Setting the listen URL without this is a FATAL startup error, not a warning.
+    # Advertise URLs may be hostnames, so this one carries the DNS alias.
+    ETCD_ADVERTISE_CLIENT_URLS: "http://[[ .params.advertiseHost ]]:2379"
+  volumes:
+    - "etcddata:/etcd-data"
+  healthcheck:
+    # The image is distroless: /bin, /usr/bin and friends are EMPTY, and the only
+    # executables are etcd, etcdctl and etcdutl. A CMD-SHELL test — or anything
+    # using curl or wget — fails with "exec: sh: not found" and never goes healthy.
+    test: ["CMD", "/usr/local/bin/etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+
+volumes:
+  etcddata: {}

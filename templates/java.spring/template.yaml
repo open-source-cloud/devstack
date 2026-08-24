@@ -1,0 +1,46 @@
+schemaVersion: 1
+description: "Spring Boot dev server (mvnw spring-boot:run) with devtools restart."
+params:
+  image:
+    type: string
+    default: "maven:3.9-eclipse-temurin-21"
+    description: "Maven + JDK base image. Swap the temurin version for a different JDK."
+  port:
+    type: int
+    default: 8080
+    description: "Spring Boot HTTP port."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      BASE_IMAGE: "[[ .params.image ]]"
+  restart: unless-stopped
+  environment:
+    SPRING_PROFILES_ACTIVE: dev
+    SERVER_PORT: "[[ .params.port ]]"
+    # Binding needs no fix here — unlike Rails, Phoenix and uvicorn, Spring Boot
+    # already listens on all interfaces unless server.address is set.
+    #
+    # devtools polls rather than using inotify, so this works over WSL2/9p with
+    # no polling switch to enable.
+    SPRING_DEVTOOLS_RESTART_ENABLED: "true"
+    SPRING_DEVTOOLS_RESTART_POLL_INTERVAL: "2s"
+    SPRING_DEVTOOLS_RESTART_QUIET_PERIOD: "1s"
+    MAVEN_OPTS: "-Dmaven.repo.local=/root/.m2/repository"
+    JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75.0"
+  # IMPORTANT — devtools watches target/classes, NOT src/. `spring-boot:run` on
+  # its own therefore never reacts to a .java edit: something has to recompile.
+  # Either let your IDE build into target/classes, run
+  # `devstack shell <service> -- ./mvnw compile` after a change, or set
+  # spring.devtools.restart.trigger-file in application-dev.properties and touch
+  # that file. This is a Spring Boot behaviour, not a devstack limitation.
+  command: ["sh", "-lc", "exec ./mvnw -q spring-boot:run"]
+  volumes:
+    - "..:/app"
+    # The Maven repository is large and slow to refill; keep it off the bind mount.
+    - "m2repo:/root/.m2"
+
+volumes:
+  m2repo: {}

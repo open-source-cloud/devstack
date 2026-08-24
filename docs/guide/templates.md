@@ -43,6 +43,24 @@ what you need. A missing **required** param fails fast.
 | `postgres` | postgres | host, port, user, password, database | 5432 | `version` ("18"), `rootUser` (devstack), `rootPassword` (devstack) |
 | `redis` | redis | host, port | 6379 | `version` ("7") |
 | `minio` | minio | host, port, accessKey, secretKey | 9000 | `rootUser` (devstackadmin), `rootPassword` (devstackadmin) |
+| `mysql` | mysql | host, port, user, password, database | 3306 | `version` ("8"), `rootUser`, `rootPassword` |
+| `mariadb` | mariadb | host, port, user, password, database | 3306 | `version`, `rootUser`, `rootPassword` |
+| `mongodb` | mongodb | host, port, user, password, database | 27017 | `version`, `rootUser`, `rootPassword` |
+| `cassandra` | cassandra | host, port | 9042 | `version` |
+| `arangodb` | arangodb | host, port, user, password | 8529 | `version`, `rootPassword` |
+| `valkey` | valkey | host, port | 6379 | `version` ("9"); Redis-compatible fork |
+| `timescaledb` | timescaledb | host, port, user, password, database | 5432 | `version` ("pg18"); PGDATA is `/home/postgres/pgdata`, not the postgres image's path |
+| `clickhouse` | clickhouse | host, port, user, password, database | 8123 | `version`; user/password are REQUIRED or the server refuses network access |
+| `neo4j` | neo4j | host, port, user, password, database | 7687 | `rootPassword` (min 8 chars); Bolt on 7687, browser on 7474 |
+| `etcd` | etcd | host, port, endpoint | 2379 | `version` (full `vX.Y.Z` — there is no `:latest`), `advertiseHost` |
+| `consul` | consul | host, port, endpoint | 8500 | `version`, `logLevel`; `-dev` keeps state in RAM (BUSL-1.1) |
+| `rustfs` | rustfs | host, port, accessKey, secretKey, endpoint | 9000 | `image`, `rootUser`, `rootPassword`; S3-compatible, MinIO-shaped defaults |
+| `meilisearch` | meilisearch | host, port, password, endpoint | 7700 | `version`, `masterKey`; DB format is tied to the minor version |
+| `opensearch` | opensearch | host, port, endpoint | 9200 | `version`, `heapSize`; needs host `vm.max_map_count` >= 262144 |
+| `mailpit` | mailpit | host, port, endpoint | 1025 | `version` (leading `v`), `maxMessages`; SMTP on 1025, inbox UI on 8025 |
+| `keycloak` | keycloak | host, port, user, password, endpoint | 8080 | `version` (no bare major tag), `rootUser`, `rootPassword` |
+| `jaeger` | jaeger | host, port, endpoint | 4317 | `version`; OTLP gRPC 4317, UI 16686, spans held in memory |
+| `mosquitto` | mosquitto | host, port | 1883 | `version`; 2.1 ships a working anonymous config, no volume (no persistence) |
 | `php.nginx` | — (parent) | — | — | `phpVersion` ("8.3") |
 | `php.laravel.nginx` | — (extends `php.nginx`) | — | — | `appEnv` (local) |
 | `node.vite` | — | — | — | `nodeVersion` ("20"); runs `npm run dev` |
@@ -52,6 +70,22 @@ what you need. A missing **required** param fails fast.
 | `react.vite` | — | — | — | `nodeVersion` ("20"); Vite HMR |
 | `bun.app` | — | — | — | `bunVersion` ("1"); `bun run dev` |
 | `turborepo` | — | — | — | `nodeVersion` ("20"); `turbo run dev` (monorepo) |
+| `go.app` | — | — | — | `goVersion` ("1.27"), `port`; `air` hot reload with polling |
+| `rust.app` | — | — | — | `rustVersion` ("1.98"), `port`; `bacon --headless -j run-long` |
+| `python.app` | — (parent) | — | — | `pythonVersion` ("3.13"), `port`; uv + a venv outside the bind mount |
+| `python.fastapi` | — (extends `python.app`) | — | — | `appModule`; `uvicorn --reload`, polling forced |
+| `python.django` | — (extends `python.app`) | — | — | `allowedHosts`; StatReloader already polls |
+| `python.flask` | — (extends `python.app`) | — | — | `appModule`, `port` (5000) |
+| `elixir.phoenix` | — | — | — | `elixirVersion`, `port`; **edit `config/dev.exs` to bind 0.0.0.0** |
+| `ruby.rails` | — | — | — | `rubyVersion`, `port`; clears the stale `server.pid` on start |
+| `java.spring` | — | — | — | `image`, `port`; devtools polls, but a `.java` edit needs a recompile |
+| `dotnet.aspnet` | — | — | — | `sdkVersion`, `port`; `dotnet watch --no-launch-profile` |
+| `deno.app` | — | — | — | `denoVersion`, `entrypoint`, `port`; no polling fallback |
+| `vue.vite` | — | — | — | `nodeVersion` ("24"), `port` (5173) |
+| `svelte.kit` | — | — | — | `nodeVersion`, `port` (5173); `npm install` runs `svelte-kit sync` |
+| `nuxt` | — | — | — | `nodeVersion`, `port` (3000), `hmrPort` (24678 — Nuxt needs TWO ports) |
+| `astro` | — | — | — | `nodeVersion`, `port` (4321 — Astro's default, not Vite's) |
+| `smee` | — | — | — | `target`, `channel`; forwards smee.io webhooks inward, binds no port |
 | `kafka` (Redpanda) | kafka | host, port, adminPort | 9092 | `image` |
 | `nats` | nats | host, port, monitorPort | 4222 | `version` ("2") |
 | `rabbitmq` | amqp | host, port, mgmtPort | 5672 | `version` ("3"), `user` (devstack) |

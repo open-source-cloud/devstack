@@ -1,0 +1,45 @@
+schemaVersion: 1
+description: "Shared Meilisearch engine, reached over the shared network at shared-meilisearch:7700."
+provides: meilisearch
+exports: [host, port, password, endpoint]
+defaultPort: 7700
+params:
+  version:
+    type: string
+    default: "v1.53"
+    description: "Meilisearch image tag (leading v). The on-disk DB format is tied to the minor version — see below."
+  masterKey:
+    type: string
+    default: devstackdevstackdevstack
+    description: "MEILI_MASTER_KEY. Must be at least 16 bytes; exported to consumers as `password`."
+  env:
+    type: string
+    default: development
+    description: "MEILI_ENV: development serves the search preview UI; production requires a strong key."
+
+service:
+  image: "getmeili/meilisearch:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    MEILI_ENV: "[[ .params.env ]]"
+    MEILI_MASTER_KEY: "[[ .params.masterKey ]]"
+    MEILI_NO_ANALYTICS: "true"
+  volumes:
+    # Mount the DIRECTORY, not the file: WORKDIR is /meili_data and db_path
+    # defaults to the relative ./data.ms, so the database lands inside it.
+    # Dumps and snapshots default under here too, so one volume covers everything.
+    #
+    # Bumping the image tag against an existing volume aborts at startup with an
+    # incompatible-database error; migrating needs a dump + import.
+    - "meilidata:/meili_data"
+  healthcheck:
+    # curl ships in the runtime stage specifically for health checks, and
+    # GET /health is unauthenticated so this works with a master key set.
+    test: ["CMD", "curl", "-fsS", "http://localhost:7700/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+
+volumes:
+  meilidata: {}

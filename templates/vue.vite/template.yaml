@@ -1,0 +1,32 @@
+schemaVersion: 1
+description: "Vue + Vite dev server with HMR."
+params:
+  nodeVersion:
+    type: string
+    default: "24"
+    description: "Node major version image tag."
+  port:
+    type: int
+    default: 5173
+    description: "Vite dev server port."
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  # The bare `--` is load-bearing: `npm run dev --host` is swallowed by npm and
+  # never reaches vite, so the server stays on its localhost default and is
+  # unreachable from outside the container.
+  command: ["sh", "-lc", "npm install && npm run dev -- --host 0.0.0.0 --port [[ .params.port ]]"]
+  environment:
+    NODE_ENV: development
+    # inotify does not propagate across a 9p/virtiofs bind mount on WSL2 or
+    # Docker Desktop; Vite's own docs recommend polling there.
+    CHOKIDAR_USEPOLLING: "true"
+    CHOKIDAR_INTERVAL: "300"
+  volumes:
+    # compose lives in <project>/.devstack, so ".." is the project source.
+    - "..:/app"
+    - "/app/node_modules"

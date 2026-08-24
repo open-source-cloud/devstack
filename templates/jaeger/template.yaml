@@ -1,0 +1,30 @@
+schemaVersion: 1
+description: "Shared Jaeger tracing backend (all-in-one), OTLP at shared-jaeger:4317; UI on 16686."
+provides: jaeger
+exports: [host, port, endpoint]
+defaultPort: 4317
+params:
+  version:
+    type: string
+    default: "2.20.0"
+    description: "Jaeger v2 image tag. Only X.Y.Z and `latest` exist — `2` and `2.20` both 404."
+
+service:
+  image: "jaegertracing/jaeger:[[ .params.version ]]"
+  restart: unless-stopped
+  # No command: the binary carries an embedded all-in-one config.
+  #
+  # Deliberately NO data volume. The embedded default config stores spans in
+  # MEMORY, so a volume would persist nothing — traces are lost on restart by
+  # design. Persisting needs a mounted badger config and an explicit
+  # `command: ["--config", "/etc/jaeger/config.yml"]`, which is out of scope for a
+  # dev tracing backend.
+  healthcheck:
+    # v2 serves health on 13133. v1's admin port 14269 does not exist here, so a
+    # healthcheck copied from a v1 example fails permanently. wget ships (alpine
+    # base); curl does not.
+    test: ["CMD-SHELL", "wget -qO- http://localhost:13133/status || exit 1"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+    start_period: 10s

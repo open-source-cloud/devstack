@@ -1,0 +1,32 @@
+schemaVersion: 1
+description: "Python toolchain base built from ./build (parent template for Python stacks: uv, a venv outside the bind mount, and dependency sync at start)."
+params:
+  pythonVersion:
+    type: string
+    default: "3.13"
+    description: "Python version base image tag."
+  port:
+    type: int
+    default: 8000
+    description: "Port the dev server listens on."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      PYTHON_VERSION: "[[ .params.pythonVersion ]]"
+  restart: unless-stopped
+  environment:
+    PYTHONUNBUFFERED: "1"
+    # Stops the container writing root-owned .pyc files into the user's repo.
+    PYTHONDONTWRITEBYTECODE: "1"
+    # The venv lives OUTSIDE /app deliberately. If it sat at /app/.venv the bind
+    # mount would shadow it, and a polling file watcher would then stat tens of
+    # thousands of site-packages files on every cycle.
+    UV_PROJECT_ENVIRONMENT: /opt/venv
+    VIRTUAL_ENV: /opt/venv
+    UV_LINK_MODE: copy
+  volumes:
+    # compose lives in <project>/.devstack, so ".." is the project source.
+    - "..:/app"

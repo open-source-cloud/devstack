@@ -1,0 +1,47 @@
+schemaVersion: 1
+description: "ASP.NET Core dev server (dotnet watch) with hot reload."
+params:
+  sdkVersion:
+    type: string
+    default: "10.0"
+    description: ".NET SDK image tag."
+  port:
+    type: int
+    default: 8080
+    description: "HTTP port."
+
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      SDK_VERSION: "[[ .params.sdkVersion ]]"
+  restart: unless-stopped
+  environment:
+    ASPNETCORE_ENVIRONMENT: Development
+    # Binding: the base image already sets ASPNETCORE_HTTP_PORTS=8080, but
+    # launchSettings.json wins over it — which is why the command below passes
+    # --no-launch-profile. With that flag, this URL is what actually binds.
+    ASPNETCORE_URLS: "http://+:[[ .params.port ]]"
+    # The SDK image already sets this, but making it explicit documents WHY
+    # reload works over a bind mount: inotify does not cross it.
+    DOTNET_USE_POLLING_FILE_WATCHER: "true"
+    DOTNET_WATCH_RESTART_ON_RUDE_EDIT: "true"
+    DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER: "1"
+    DOTNET_RUNNING_IN_CONTAINER: "true"
+    NUGET_PACKAGES: /root/.nuget/packages
+  # --no-launch-profile is the difference between working and silently binding
+  # localhost: without it, dotnet run reads Properties/launchSettings.json and its
+  # applicationUrl overrides ASPNETCORE_URLS.
+  # --non-interactive stops watch waiting on a TTY that compose does not give it.
+  command: ["dotnet", "watch", "--non-interactive", "run", "--no-launch-profile"]
+  volumes:
+    - "..:/app"
+    # obj/ and bin/ hold absolute paths from whichever environment wrote them, so
+    # the container and the host must not share them.
+    - "/app/obj"
+    - "/app/bin"
+    - "nugetcache:/root/.nuget/packages"
+
+volumes:
+  nugetcache: {}

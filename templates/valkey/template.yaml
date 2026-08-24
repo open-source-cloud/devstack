@@ -1,0 +1,31 @@
+schemaVersion: 1
+description: "Shared Valkey engine (Redis-compatible fork), reached over the shared network at shared-valkey."
+provides: valkey
+exports: [host, port]
+defaultPort: 6379
+params:
+  version:
+    type: string
+    default: "9"
+    description: "Valkey major version image tag."
+
+service:
+  image: "valkey/valkey:[[ .params.version ]]"
+  restart: unless-stopped
+  # Explicit argv (not bare flags): the entrypoint only prepends valkey-server for
+  # a bare -flag/*.conf first arg, and naming the binary keeps the uid-999 drop.
+  command: ["valkey-server", "--appendonly", "yes"]
+  volumes:
+    # The image declares no VOLUME — only WORKDIR /data — so without this mount
+    # every AOF/RDB file dies with the container.
+    - "valkeydata:/data"
+  healthcheck:
+    # valkey-cli ships in the image (a multi-call symlink of valkey-server); it
+    # prints PONG and exits non-zero on connection refused. There is no curl here.
+    test: ["CMD", "valkey-cli", "ping"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+volumes:
+  valkeydata: {}

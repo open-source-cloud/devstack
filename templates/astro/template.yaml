@@ -1,0 +1,28 @@
+schemaVersion: 1
+description: "Astro dev server with HMR."
+params:
+  nodeVersion:
+    type: string
+    default: "24"
+    description: "Node major version image tag."
+  port:
+    type: int
+    default: 4321
+    description: "Astro dev server port. 4321 is Astro's own default, not Vite's 5173."
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  # Astro's server.host defaults to false — strictly localhost, unreachable from
+  # outside the container. The bare `--` is load-bearing: npm swallows --host.
+  command: ["sh", "-lc", "npm install && npm run dev -- --host 0.0.0.0 --port [[ .params.port ]]"]
+  environment:
+    NODE_ENV: development
+    CHOKIDAR_USEPOLLING: "true"
+    CHOKIDAR_INTERVAL: "300"
+  volumes:
+    - "..:/app"
+    - "/app/node_modules"

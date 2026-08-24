@@ -1,0 +1,31 @@
+schemaVersion: 1
+description: "SvelteKit dev server (vite dev) with HMR."
+params:
+  nodeVersion:
+    type: string
+    default: "24"
+    description: "Node major version image tag."
+  port:
+    type: int
+    default: 5173
+    description: "Vite dev server port."
+service:
+  build:
+    context: build
+    dockerfile: Dockerfile
+    args:
+      NODE_VERSION: "[[ .params.nodeVersion ]]"
+  restart: unless-stopped
+  # `npm install` also runs `svelte-kit sync` via npm's prepare lifecycle hook,
+  # which generates .svelte-kit/ — SvelteKit will not start without it. If you
+  # switch this to `npm ci --ignore-scripts`, add an explicit `npx svelte-kit sync`.
+  #
+  # The bare `--` is load-bearing: npm swallows `--host` otherwise.
+  command: ["sh", "-lc", "npm install && npm run dev -- --host 0.0.0.0 --port [[ .params.port ]]"]
+  environment:
+    NODE_ENV: development
+    CHOKIDAR_USEPOLLING: "true"
+    CHOKIDAR_INTERVAL: "300"
+  volumes:
+    - "..:/app"
+    - "/app/node_modules"

@@ -1,0 +1,38 @@
+schemaVersion: 1
+extends: python.app
+description: "Flask dev server (flask run --debug) with the Werkzeug reloader (extends python.app)."
+params:
+  port:
+    type: int
+    default: 5000
+    description: "Flask's default port. Note 5000 is taken by AirPlay Receiver on macOS, so the host-side allocation may land elsewhere."
+  appModule:
+    type: string
+    default: "app"
+    description: "FLASK_APP — the module or factory Flask should import."
+
+service:
+  environment:
+    FLASK_APP: "[[ .params.appModule ]]"
+    FLASK_DEBUG: "1"
+    FLASK_RUN_HOST: "0.0.0.0"
+    FLASK_RUN_PORT: "[[ .params.port ]]"
+    # The debugger PIN prompt is noise on a local-only dev container.
+    WERKZEUG_DEBUG_PIN: "off"
+  # Flask is the one framework here with NO polling switch: Werkzeug's reloader
+  # picks watchdog (inotify) whenever watchdog is importable and offers no env var
+  # to force the stat loop. If reload stops working over a WSL2/9p bind mount,
+  # remove watchdog from the project's dependencies — the stat fallback polls and
+  # works.
+  #
+  # --debug is what enables the reloader, and it also enables the interactive
+  # debugger, which executes code from the browser. Fine on the tool-owned network;
+  # never expose this service publicly.
+  command:
+    - "sh"
+    - "-lc"
+    - >-
+      if [ -f uv.lock ]; then uv sync --frozen;
+      elif [ -f pyproject.toml ]; then uv sync;
+      elif [ -f requirements.txt ]; then uv pip install -r requirements.txt; fi;
+      exec flask run --debug --host 0.0.0.0 --port [[ .params.port ]]

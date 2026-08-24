@@ -1,0 +1,46 @@
+schemaVersion: 1
+description: "Shared RustFS S3-compatible object storage, reached over the shared network at shared-rustfs:9000 (console on 9001)."
+provides: rustfs
+exports: [host, port, accessKey, secretKey, endpoint]
+defaultPort: 9000
+params:
+  image:
+    type: string
+    default: "rustfs/rustfs:latest"
+    description: "RustFS image. Pin a release tag (e.g. rustfs/rustfs:1.0.0-rc.3) for reproducibility."
+  rootUser:
+    type: string
+    default: devstackadmin
+    description: "RUSTFS_ACCESS_KEY — matches the minio template's default so the two are drop-in swappable."
+  rootPassword:
+    type: string
+    default: devstackadmin
+    description: "RUSTFS_SECRET_KEY."
+
+service:
+  image: "[[ .params.image ]]"
+  restart: unless-stopped
+  environment:
+    RUSTFS_ACCESS_KEY: "[[ .params.rootUser ]]"
+    RUSTFS_SECRET_KEY: "[[ .params.rootPassword ]]"
+    # Set the data volume through the env rather than a command argument: the
+    # image's ENTRYPOINT is /entrypoint.sh with CMD ["rustfs"], so passing a bare
+    # path would replace the command instead of adding to it.
+    RUSTFS_VOLUMES: /data
+    RUSTFS_ADDRESS: "0.0.0.0:9000"
+    RUSTFS_CONSOLE_ADDRESS: "0.0.0.0:9001"
+    RUSTFS_CONSOLE_ENABLE: "true"
+  volumes:
+    # The container runs as uid/gid 10001. A named volume is fine — Docker seeds
+    # ownership from the image — but a host bind mount here would need chowning.
+    - "rustfsdata:/data"
+  healthcheck:
+    # curl is explicitly installed in the alpine runtime stage.
+    test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+    interval: 10s
+    timeout: 5s
+    retries: 6
+    start_period: 15s
+
+volumes:
+  rustfsdata: {}

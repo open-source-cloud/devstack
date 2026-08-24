@@ -1,0 +1,40 @@
+schemaVersion: 1
+description: "Shared Mailpit SMTP catcher, reached over the shared network at shared-mailpit:1025 (web UI on 8025)."
+provides: mailpit
+exports: [host, port, endpoint]
+defaultPort: 1025
+params:
+  version:
+    type: string
+    default: "v1.31"
+    description: "Mailpit image tag. Tags carry a leading v — 1.31 does not exist."
+  maxMessages:
+    type: int
+    default: 5000
+    description: "Ring-buffer size; older mail is evicted past this."
+
+service:
+  image: "axllent/mailpit:[[ .params.version ]]"
+  restart: unless-stopped
+  environment:
+    # MP_DATABASE is the persistence switch, NOT the volume: the default store is
+    # a temp file deleted on exit, so a volume alone silently keeps nothing.
+    MP_DATABASE: /data/mailpit.db
+    MP_MAX_MESSAGES: "[[ .params.maxMessages ]]"
+    # Accept whatever credentials an app sends — dev apps rarely disable SMTP auth.
+    MP_SMTP_AUTH_ACCEPT_ANY: "1"
+    MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+  volumes:
+    - "mailpitdata:/data"
+  healthcheck:
+    # Mailpit's own binary; this is the check upstream's Dockerfile declares. The
+    # CMD form bypasses ENTRYPOINT, so the absolute path is required. No curl in
+    # the image (alpine + tzdata only).
+    test: ["CMD", "/mailpit", "readyz"]
+    interval: 15s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+
+volumes:
+  mailpitdata: {}
