@@ -37,7 +37,7 @@ require (
 	github.com/twmb/franz-go/pkg/kadm v1.18.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/mod v0.37.0
-	golang.org/x/sync v0.20.0
+	golang.org/x/sync v0.21.0
 	golang.org/x/term v0.44.0
 	modernc.org/sqlite v1.52.0
 	oras.land/oras-go/v2 v2.6.1
@@ -121,7 +121,7 @@ require (
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	modernc.org/libc v1.72.3 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
