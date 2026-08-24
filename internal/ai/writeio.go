@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
@@ -63,6 +64,18 @@ type WriteResult struct {
 func Write(arts []Artifact) ([]WriteResult, error) {
 	out := make([]WriteResult, 0, len(arts))
 	for _, a := range arts {
+		// Nothing to do when the artifact's own content already matches. Checking
+		// first — rather than relying on writeIfChanged's byte compare — is what
+		// keeps devstack from reformatting a user-owned JSON file whose devstack
+		// key is already correct.
+		ok, err := satisfied(a)
+		if err != nil {
+			return out, err
+		}
+		if ok {
+			out = append(out, WriteResult{Path: a.Rel, Kind: a.Kind, Changed: false})
+			continue
+		}
 		want, err := merged(a)
 		if err != nil {
 			return out, err
@@ -76,38 +89,86 @@ func Write(arts []Artifact) ([]WriteResult, error) {
 	return out, nil
 }
 
-// UpToDate reports whether every artifact already matches disk. This is the basis
-// for --check, so it must apply the same merge each mode would perform rather
-// than comparing raw bytes.
+// UpToDate reports whether every artifact is already satisfied on disk.
 func UpToDate(arts []Artifact) (bool, error) {
-	for _, a := range arts {
-		want, err := merged(a)
-		if err != nil {
-			return false, err
-		}
-		existing, err := os.ReadFile(a.Path)
-		if err != nil || !bytes.Equal(existing, want) {
-			return false, nil
-		}
-	}
-	return true, nil
+	stale, err := Stale(arts)
+	return len(stale) == 0, err
 }
 
-// Stale returns the artifacts whose on-disk content differs, so --check can name
-// them instead of just failing.
+// Stale returns the artifacts that are not satisfied, so --check can name them
+// instead of just failing.
 func Stale(arts []Artifact) ([]Artifact, error) {
 	var out []Artifact
 	for _, a := range arts {
-		want, err := merged(a)
+		ok, err := satisfied(a)
 		if err != nil {
 			return nil, err
 		}
-		existing, err := os.ReadFile(a.Path)
-		if err != nil || !bytes.Equal(existing, want) {
+		if !ok {
 			out = append(out, a)
 		}
 	}
 	return out, nil
+}
+
+// satisfied reports whether an artifact's contribution is already present on
+// disk. What counts as "present" depends on how much of the file devstack owns.
+//
+// For MergeWhole and MergeFence devstack owns the bytes it writes (the whole file
+// or the fenced block, with everything outside preserved verbatim), so a byte
+// comparison of the merged result is exactly right.
+//
+// For MergeJSONKey devstack owns ONE KEY, not the file's formatting. Comparing
+// bytes there would mean any reformat by an editor, a formatter or another tool
+// marks the artifact stale forever — and since `ai check` gates CI, a purely
+// cosmetic change would fail the build and re-running `ai install` would fight
+// the other tool on every commit. So the key is compared semantically, and the
+// file is rewritten only when the key's VALUE actually differs.
+func satisfied(a Artifact) (bool, error) {
+	existing, err := os.ReadFile(a.Path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", a.Path, err)
+	}
+	if a.Merge == MergeJSONKey {
+		return jsonKeyMatches(existing, a.JSONPath, a.Data)
+	}
+	want, err := merged(a)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(existing, want), nil
+}
+
+// jsonKeyMatches reports whether the value at path already equals want, compared
+// as JSON values rather than as text.
+func jsonKeyMatches(existing []byte, path []string, want []byte) (bool, error) {
+	if len(bytes.TrimSpace(existing)) == 0 {
+		return false, nil
+	}
+	var doc any
+	if err := json.Unmarshal(existing, &doc); err != nil {
+		// A malformed file is not "satisfied"; Write surfaces the parse error.
+		return false, nil
+	}
+	cur := doc
+	for _, key := range path {
+		obj, ok := cur.(map[string]any)
+		if !ok {
+			return false, nil
+		}
+		cur, ok = obj[key]
+		if !ok {
+			return false, nil
+		}
+	}
+	var wantVal any
+	if err := json.Unmarshal(want, &wantVal); err != nil {
+		return false, fmt.Errorf("decode desired value for %s: %w", strings.Join(path, "."), err)
+	}
+	return reflect.DeepEqual(cur, wantVal), nil
 }
 
 // merged computes the full file content an artifact should produce, reading the

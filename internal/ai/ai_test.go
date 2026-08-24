@@ -503,3 +503,84 @@ func TestOutputDoesNotDependOnVersion(t *testing.T) {
 		}
 	}
 }
+
+// TestJSONKeyIgnoresFormatting is a regression test for a real failure: another
+// tool reformatted .mcp.json (same JSON, different whitespace) and `ai check`
+// reported it stale — which, with ai-check gating CI, would fail the build on a
+// purely cosmetic change and make devstack fight the other formatter on every
+// commit. devstack owns ONE KEY in that file, not its formatting.
+func TestJSONKeyIgnoresFormatting(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+
+	// Write it once the normal way.
+	if _, err := Write(buildAll(t, dir)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// Now reformat the file the way a different tool would: identical JSON,
+	// compact array, extra key ordering churn.
+	reformatted := `{
+  "mcpServers": {
+    "devstack": { "command": "devstack", "args": ["ai", "mcp"] }
+  }
+}
+`
+	if err := os.WriteFile(path, []byte(reformatted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stale, err := Stale(buildAll(t, dir))
+	if err != nil {
+		t.Fatalf("Stale: %v", err)
+	}
+	for _, a := range stale {
+		if a.Rel == ".mcp.json" {
+			t.Error(".mcp.json reported stale after a cosmetic reformat; devstack owns the key, not the formatting")
+		}
+	}
+
+	// And a write must leave the reformatted file alone.
+	results, err := Write(buildAll(t, dir))
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	for _, r := range results {
+		if r.Path == ".mcp.json" && r.Changed {
+			t.Error("devstack rewrote .mcp.json purely to reformat it")
+		}
+	}
+	if got := readFile(t, path); got != reformatted {
+		t.Errorf("the user's formatting was not preserved:\n%s", got)
+	}
+}
+
+// TestJSONKeyDetectsARealChange is the other half: a genuinely wrong value must
+// still be corrected.
+func TestJSONKeyDetectsARealChange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".mcp.json")
+	if err := os.WriteFile(path, []byte(
+		`{"mcpServers":{"devstack":{"command":"WRONG","args":["ai","mcp"]}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := Stale(buildAll(t, dir))
+	if err != nil {
+		t.Fatalf("Stale: %v", err)
+	}
+	var found bool
+	for _, a := range stale {
+		if a.Rel == ".mcp.json" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("a wrong command value should be reported stale")
+	}
+	if _, err := Write(buildAll(t, dir)); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if strings.Contains(readFile(t, path), "WRONG") {
+		t.Error("the wrong value was not corrected")
+	}
+}
