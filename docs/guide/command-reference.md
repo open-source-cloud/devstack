@@ -38,10 +38,12 @@ See [projects.md](projects.md), [templates.md](templates.md).
 | `init` | Author a `workspace.yaml` (pick shared services + params); wizard on a bare TTY. | `--name`, `--profile`, `--service`, `--param`, `--alias`, `--project`, `--from-store`, `--out`, `--dry-run`, `--force`, `--no-input` |
 | `use [name]` | Set the active project (or switch workspace); bare + TTY opens a fuzzy picker. | `--project`, `--print` |
 | `context` | Show the active workspace/project/role/docker-context/version. | `--json`, `--prompt` |
+| `shell-init <zsh\|bash\|fish>` | Print the shell hook that enables context switching, completions and the prompt segment. | — |
 | `project list` / `project new <name>` | List projects / scaffold a `devstack.yaml` + register it. | `--path`, `--template`, `--uses`, `--git` |
 | `env list` / `env set KEY=VALUE` / `env unset KEY` | View/edit a service's local env vars (comment-preserving). | `--project`, `--service` |
 | `config validate` | Validate workspace + project config (errors as `file:line:col`). | — |
 | `config show` | Print a summary of the resolved workspace config. | — |
+| `config schema` | Print the published JSON Schema for `devstack.yaml` / `workspace.yaml`. | `--kind` |
 | `generate` | Render compose + build artifacts from config and templates. | `--project`, `--profile`, `--check` |
 | `ide` | Generate devcontainer / `.code-workspace` / editor configs. | `--devcontainer`, `--vscode`, `--all`, `--check` |
 | `import <project.yaml>` | Convert a legacy devdock `project.yaml` into workspace + per-repo config. | `--dry-run`, `--out`, `--force` |
@@ -209,6 +211,18 @@ See [store.md](store.md), [aliases.md](aliases.md).
 | `alias add <name>` | Install an alias symlink in `XDG_BIN_HOME`. | — |
 | `alias remove <name>` (alias `rm`) | Remove an alias symlink + registry entry. | — |
 | `alias list` | List installed aliases. | — |
+
+## AI agents
+
+See [ai-agents.md](ai-agents.md).
+
+| Command | Does | Key flags |
+|---|---|---|
+| `ai install` | Write the skills, the AGENTS.md block and the MCP registration into this repo. | `--target`, `--check` |
+| `ai check` | Report whether those emitted files are up to date (exits non-zero on drift). | — |
+| `ai mcp` | Serve devstack over the Model Context Protocol on stdio (tools, resources, prompts). | `--read-only`, `--allow-destructive` |
+| `ai docs [slug]` | List, print or search the documentation corpus compiled into the binary. | `--search`, `--section`, `--limit` |
+| `ai commands` | The whole command surface as machine-readable data, derived from the live tree. | `--runnable` |
 
 ## Binary & meta
 

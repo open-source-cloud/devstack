@@ -46,7 +46,8 @@ func (g *Generator) buildCodeWorkspace() (Artifact, error) {
 		Folders: folders,
 		Settings: cwSettings{
 			YAMLSchemas: map[string][]string{
-				g.schemaURL(): {"workspace.yaml", "**/devstack.yaml"},
+				g.schemaURL(config.SchemaWorkspace): {"workspace.yaml"},
+				g.schemaURL(config.SchemaProject):   {"**/devstack.yaml"},
 			},
 		},
 		Extensions: cwExtensions{Recommendations: []string{devContainersExtension}},
@@ -93,7 +94,7 @@ type vscodeSettings struct {
 func (g *Generator) buildSettings(dir string) (Artifact, error) {
 	vs := vscodeSettings{
 		YAMLSchemas: map[string][]string{
-			g.schemaURL(): {"devstack.yaml"},
+			g.schemaURL(config.SchemaProject): {"devstack.yaml"},
 		},
 	}
 	data, err := marshalJSON(vs)

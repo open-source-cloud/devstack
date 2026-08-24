@@ -113,4 +113,4 @@ machine-global teardown — see [recovery.md](recovery.md).
 
 ---
 
-◀ [The global store (~/.devstack)](store.md) · [Guide index](./README.md) · [Full config reference](config-reference.md) ▶
+◀ [The global store (~/.devstack)](store.md) · [Guide index](./README.md) · [AI agents](ai-agents.md) ▶

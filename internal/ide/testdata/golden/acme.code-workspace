@@ -16,8 +16,10 @@
   "settings": {
     "yaml.schemas": {
       "https://raw.githubusercontent.com/open-source-cloud/devstack/v1.2.3/schemas/devstack.schema.json": [
-        "workspace.yaml",
         "**/devstack.yaml"
+      ],
+      "https://raw.githubusercontent.com/open-source-cloud/devstack/v1.2.3/schemas/workspace.schema.json": [
+        "workspace.yaml"
       ]
     }
   },

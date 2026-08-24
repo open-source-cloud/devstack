@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/open-source-cloud/devstack/main/schemas/devstack.schema.json",
+  "title": "devstack project (devstack.yaml)",
+  "description": "One repo's devstack.yaml — the portable project layer: services rendered from templates, the shared services they consume, declarative data-plane resources, lifecycle hooks and the task graph. Hand-authored per DECISIONS D16; the Go validator in internal/config is the source of truth and a CI round-trip test keeps the two aligned.",
+  "type": "object",
+  "required": ["apiVersion", "kind", "name", "services"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": { "const": "devstack/v1" },
+    "kind": { "const": "Project" },
+    "name": { "$ref": "#/$defs/dsname", "description": "Project name. Must match the name workspace.yaml lists for this path." },
+    "services": {
+      "type": "object",
+      "description": "Containers in this project's stack, keyed by service name.",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/dsname" },
+      "additionalProperties": { "$ref": "#/$defs/service" }
+    },
+    "resources": {
+      "type": "array",
+      "description": "Declarative data-plane resources this project needs INSIDE a shared engine (spec 27). Provisioned idempotently by `up`. Removing an entry never auto-drops the resource — teardown is always explicit.",
+      "items": { "$ref": "#/$defs/resourceDecl" }
+    },
+    "tasks": {
+      "type": "object",
+      "description": "The non-container task graph run by `devstack run` (spec 31).",
+      "propertyNames": { "$ref": "#/$defs/dsname" },
+      "additionalProperties": { "$ref": "#/$defs/task" }
+    },
+    "hooks": { "$ref": "#/$defs/hooks" }
+  },
+  "$defs": {
+    "dsname": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+      "description": "Compose/DNS-safe identifier: lowercase, starts with a letter, up to 63 chars of [a-z0-9_-]."
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "description": "A Go/Compose duration string, e.g. \"5s\", \"1m30s\"."
+    },
+    "cpus": {
+      "type": "string",
+      "pattern": "^[0-9]*\\.?[0-9]+$",
+      "description": "Fractional cores as a string, e.g. \"1.5\". Must be greater than zero."
+    },
+    "platform": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+/[a-z0-9]+(/[a-z0-9]+)?$",
+      "description": "An os/arch[/variant] selector, e.g. linux/amd64, linux/arm64/v8."
+    },
+    "envMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Literal environment variables. Values support ${env.NAME}, ${self.attr}, ${ref:...}, ${profile} and ${workspace.name} interpolation, plus secret://provider/path#key refs."
+    },
+    "params": {
+      "type": "object",
+      "description": "Template parameters. Accepted keys and types are declared by the template's params: block (see `devstack template list --json`).",
+      "additionalProperties": true
+    },
+    "resources": {
+      "type": "object",
+      "title": "Resource limits",
+      "description": "CPU/memory/PID limits (spec 18). Lowered to BOTH deploy.resources.limits.* and the legacy top-level cpus/mem_limit/pids_limit.",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": { "$ref": "#/$defs/cpus" },
+        "memoryMB": { "type": "integer", "minimum": 0, "description": "Hard memory limit in MB." },
+        "memoryReserveMB": { "type": "integer", "minimum": 0, "description": "Soft memory reservation in MB (scheduling hint)." },
+        "pidsLimit": { "type": "integer", "minimum": 0, "description": "Maximum number of PIDs." }
+      }
+    },
+    "hook": {
+      "type": "object",
+      "title": "Lifecycle hook",
+      "description": "One declarative command run at a saga phase (spec 11).",
+      "required": ["name", "run", "command"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/dsname" },
+        "run": { "enum": ["host", "exec"], "description": "host runs via os/exec on the host; exec shells into a running service with `compose exec -T`." },
+        "service": { "type": "string", "description": "Target service. Required when run: exec." },
+        "command": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "argv array — never shell-split by devstack." },
+        "workdir": { "type": "string" },
+        "env": { "$ref": "#/$defs/envMap" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "retries": { "type": "integer", "minimum": 0 },
+        "onFailure": { "enum": ["abort", "warn", "continue"] },
+        "once": { "type": "boolean", "description": "Run at most once per workspace (firstRun ledger)." }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "title": "Lifecycle hooks",
+      "description": "Hooks grouped by saga phase (spec 11). Lists REPLACE on overlay merge unless the YAML opts into `$merge: append`.",
+      "additionalProperties": false,
+      "properties": {
+        "preUp":    { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "firstRun": { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "postUp":   { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "postPull": { "type": "array", "items": { "$ref": "#/$defs/hook" } },
+        "preDown":  { "type": "array", "items": { "$ref": "#/$defs/hook" } }
+      }
+    }
+,
+    "service": {
+      "type": "object",
+      "title": "Service",
+      "description": "One container in the project stack, rendered from a template.",
+      "required": ["template"],
+      "additionalProperties": false,
+      "properties": {
+        "template": { "type": "string", "description": "Template ref, e.g. node.next, php.laravel.nginx. See `devstack template list`." },
+        "params": { "$ref": "#/$defs/params" },
+        "uses": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^workspace\\.shared\\.[a-z][a-z0-9_-]*$" },
+          "description": "Shared services this service consumes, as workspace.shared.<name>."
+        },
+        "env": { "$ref": "#/$defs/env" },
+        "ports": {
+          "type": "object",
+          "description": "Named in-container ports, e.g. { http: 3000 }.",
+          "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        },
+        "profiles": { "type": "array", "items": { "type": "string" }, "description": "Compose profile membership tags (spec 12)." },
+        "memoryMB": { "type": "integer", "minimum": 0, "description": "Shorthand for resources.memoryMB; also feeds the workspace memory budget." },
+        "resources": { "$ref": "#/$defs/resources" },
+        "platform": { "$ref": "#/$defs/platform" },
+        "healthcheck": { "$ref": "#/$defs/healthcheck" },
+        "dependsOn": { "type": "array", "items": { "$ref": "#/$defs/dependsOn" } }
+      }
+    },
+    "env": {
+      "type": "object",
+      "title": "Environment",
+      "description": "Container environment. raw/prefixed are literal (with ${...} interpolation); import pulls exported vars from another service.",
+      "additionalProperties": false,
+      "properties": {
+        "raw": { "$ref": "#/$defs/envMap" },
+        "prefixed": { "$ref": "#/$defs/envMap" },
+        "import": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "type": "string", "description": "Reference path, e.g. workspace.shared.postgres or workspace.<project>.<service>." },
+              "vars": { "type": "array", "items": { "type": "string" }, "description": "Exported attribute names to import. Omit for all exports." }
+            }
+          }
+        }
+      }
+    },
+    "healthcheck": {
+      "type": "object",
+      "title": "Healthcheck",
+      "description": "Readiness probe (spec 10). Compiles to both a Compose healthcheck: block and a tool-side prober.",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["tcp", "http", "https", "exec", "pg_isready", "redis"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "description": "http/https only." },
+        "expectStatus": { "type": "string", "description": "http/https only: \"200\" or a range like \"200-399\"." },
+        "host": { "type": "string", "description": "http/https Host header." },
+        "command": { "type": "array", "items": { "type": "string" }, "description": "exec kind: argv; exit 0 means healthy." },
+        "user": { "type": "string", "description": "pg_isready only." },
+        "db": { "type": "string", "description": "pg_isready only." },
+        "auth": { "type": "string", "description": "redis only; may be a secret:// ref." },
+        "interval": { "$ref": "#/$defs/duration" },
+        "timeout": { "$ref": "#/$defs/duration" },
+        "retries": { "type": "integer", "minimum": 0 },
+        "startPeriod": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "dependsOn": {
+      "type": "object",
+      "title": "Ordering edge",
+      "description": "A readiness-ordering edge (spec 10). A healthy edge requires the target to declare a healthcheck.",
+      "required": ["service"],
+      "additionalProperties": false,
+      "properties": {
+        "service": { "type": "string", "description": "An intra-project service name, or workspace.shared.<name>." },
+        "condition": { "enum": ["healthy", "started"], "description": "Default: healthy." }
+      }
+    },
+    "resourceDecl": {
+      "type": "object",
+      "title": "Declarative resource",
+      "required": ["uses", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "uses": { "type": "string", "pattern": "^workspace\\.shared\\.[a-z][a-z0-9_-]*$", "description": "The shared engine that hosts this resource." },
+        "kind": { "enum": ["database", "user", "bucket", "lifecycle", "queue", "stream", "topic"] },
+        "name": { "type": "string", "description": "Engine-level identifier. Defaults to the project name." },
+        "engine": { "type": "string", "description": "Optional; inferred from the uses target's template." },
+        "params": { "$ref": "#/$defs/params" },
+        "credentials": { "enum": ["predictable", "generated"] }
+      }
+    },
+    "task": {
+      "type": "object",
+      "title": "Task",
+      "description": "One node in the task graph (spec 31). A short-lived command, not a container.",
+      "required": ["command"],
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "argv array — never shell-split by devstack." },
+        "run": { "enum": ["host", "exec"], "description": "Default: host." },
+        "service": { "type": "string", "description": "Target service for run: exec." },
+        "deps": { "type": "array", "items": { "type": "string" }, "description": "Task names that must complete first. Cycles are rejected at run time." },
+        "workdir": { "type": "string" },
+        "env": { "$ref": "#/$defs/envMap" },
+        "watch": { "type": "boolean", "description": "Long-running dev-server task that --watch keeps alive." }
+      }
+    }
+  }
+}

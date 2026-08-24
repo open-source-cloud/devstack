@@ -344,4 +344,4 @@ See [secrets.md](secrets.md) for the full workflow.
 
 ---
 
-◀ [Aliases & argv[0] dispatch](aliases.md) · [Guide index](./README.md) · [Command reference](command-reference.md) ▶
+◀ [AI agents](ai-agents.md) · [Guide index](./README.md) · [Command reference](command-reference.md) ▶

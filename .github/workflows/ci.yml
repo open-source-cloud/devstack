@@ -1,11 +1,14 @@
 name: CI
 
+# docs/ is a BUILD INPUT: docs/embed.go compiles the whole corpus into the binary
+# (spec 32), so a doc-only change can ship a broken cross-link inside a release.
+# Only files that are genuinely not compiled in may be skipped here.
 on:
   push:
     branches: [main]
-    paths-ignore: ["**/*.md", "docs/**", "LICENSE", "NOTICE"]
+    paths-ignore: ["README.md", "PROGRESS.md", "LICENSE", "NOTICE"]
   pull_request:
-    paths-ignore: ["**/*.md", "docs/**", "LICENSE", "NOTICE"]
+    paths-ignore: ["README.md", "PROGRESS.md", "LICENSE", "NOTICE"]
 
 permissions:
   contents: read
