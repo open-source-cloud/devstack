@@ -23,7 +23,7 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-    paths-ignore: ["**/*.md", "docs/**", "LICENSE", "NOTICE"]
+    paths-ignore: ["README.md", "PROGRESS.md", "LICENSE", "NOTICE"]
   workflow_dispatch: {}
 
 permissions:

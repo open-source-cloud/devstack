@@ -137,6 +137,31 @@ On a shared cluster, what identifies a tenant for role/db/bucket naming and `db 
 - **Recommendation:** an explicit config-declared/`--as` team identity (stable, collision-free, decoupled from local OS accounts); fall back to OS username only as a default seed.
 - **Decision (RESOLVED, later):** an explicit **config-declared / `--as` team identity** (stable, collision-free, decoupled from local OS accounts) keys role/db/bucket naming and `db gc` ownership; OS username is only a default seed.
 
+## Q-AI-SCOPE — repo-scoped agent files only, or a global install too?
+`devstack ai install` writes into the repository, so the guidance is committed and
+the whole team's tooling picks it up. A `--global` variant writing into
+`~/.claude/skills/` would make every project on the machine devstack-aware,
+including ones that have no workspace yet.
+
+- **Recommendation:** repo-scoped for v1. Global is a second install location with
+  its own uninstall story and a `devstack uninstall` interaction, and the
+  repo-scoped files already cover the case that matters (a teammate cloning the
+  repo). Revisit in v1.1 on concrete demand.
+- **Decision (RESOLVED, M11):** repo-scoped only; `--global` deferred.
+
+## Q-AI-PLUGIN — ship a Claude Code plugin + marketplace from this repo?
+A `plugin/` tree plus `.claude-plugin/marketplace.json` would let a user run
+`/plugin marketplace add open-source-cloud/devstack` and get the skills and the
+MCP server with zero files in their own repository.
+
+- **Recommendation:** defer. It is a second distribution channel with its own
+  versioning and release surface, and its audience — people who want devstack's
+  agent integration — by definition already have the binary installed, which is
+  all `ai install` needs. Revisit once the emitted skills have stabilized against
+  real usage.
+- **Decision (OPEN, revisit v1.1):** deferred; the emitter would generate the
+  plugin tree from the same pack, so nothing here forecloses it.
+
 ## Decisions already made (recorded from our conversation)
 - Ambition: **open-source product**.
 - v1 scope: **all four pillars** (with the M0–M3 "core 1.0" phasing recommended in [ROADMAP](ROADMAP.md)).
