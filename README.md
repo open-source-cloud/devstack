@@ -88,10 +88,19 @@ tasks:
 - **Active context + switching** — `devstack use <project>` sets the current
   project; with shell integration it `cd`s and sets env in your live shell.
   `devstack context` shows where you are; a prompt segment keeps it visible.
-- **Framework templates with hot reload** — `node.express`, `node.nestjs`,
-  `node.next`, `react.vite`, `bun.app`, `turborepo`, `php.laravel.nginx`, plus the
-  shared engines. App templates bind-mount your source and run the dev server with
-  file-watch polling for WSL2.
+- **51 built-in templates with hot reload** — apps for Go, Rust, Python
+  (FastAPI/Django/Flask), Node, Bun, Deno, PHP/Laravel, Ruby on Rails, Elixir
+  Phoenix, Java Spring, ASP.NET, and the Vite family (React, Vue, Svelte, Nuxt,
+  Astro). App templates bind-mount your source, force the dev server to bind
+  `0.0.0.0`, and enable file-watch polling for WSL2.
+- **Shared engines for most of what you'd reach for** — Postgres, MySQL, MariaDB,
+  MongoDB, Cassandra, ArangoDB, Redis, Valkey, TimescaleDB, ClickHouse, Neo4j,
+  MinIO, RustFS, OpenSearch, Meilisearch, Kafka, NATS, RabbitMQ, etcd, Consul,
+  Keycloak, Jaeger, Mailpit, Mosquitto, LocalStack.
+- **Your AI tools learn devstack from devstack** — `devstack ai install` writes
+  Claude Code skills, a fenced `AGENTS.md` block (read by Codex, Cursor, Copilot,
+  Gemini CLI, Windsurf, Zed) and an MCP registration into the repo; `devstack ai
+  mcp` serves the whole CLI over the Model Context Protocol.
 - **A task runner** — declare `tasks:` with `deps:` and run the graph with
   `devstack run <task>` (dependency-ordered, parallel, streamed).
 - **Deterministic generation** — templates render Compose + Dockerfiles
@@ -111,7 +120,8 @@ tasks:
 |---|---|
 | **Lifecycle** | `up` · `down` · `status` · `shell` · `run` · `logs` · `dashboard` |
 | **Context & DX** | `use` · `context` · `shell-init` · `project list/new` · `env list/set/unset` |
-| **Config & templates** | `init` · `config validate/show` · `generate` · `ide` · `template list/lint/test/new` · `import` |
+| **Config & templates** | `init` · `config validate/show/schema` · `generate` · `ide` · `template list/lint/test/new` · `import` |
+| **AI agents** | `ai install/check` · `ai mcp` · `ai docs` · `ai commands` |
 | **Shared & host access** | `shared status/gc/doctor` · `expose` · `ports` |
 | **Data plane** | `db` · `s3` · `queue` · `topic` · `stream` · `resource` · `aws -- …` |
 | **Multi-repo git** | `ws clone/sync/status/git` |
@@ -180,17 +190,28 @@ Run `devstack doctor` to check everything.
   workspaces, projects, env vars, templates, the data plane, every command, and the
   full config reference.
 - **[QUICKSTART.md](docs/QUICKSTART.md)** — the 5-minute path.
+- **[AI agents](docs/guide/ai-agents.md)** — the `ai` group: MCP, skills, the
+  embedded docs corpus and the JSON Schemas.
 - **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** · **[DECISIONS.md](docs/DECISIONS.md)** · **[ROADMAP.md](docs/ROADMAP.md)** — design, chosen stack, milestones.
-- **Component specs** — [`docs/specs/`](docs/specs/) (01…31), each self-contained.
+- **Component specs** — [`docs/specs/`](docs/specs/) (01…32), each self-contained.
+
+You can also read the documentation without leaving the terminal — the whole
+corpus is compiled into the binary:
+
+```bash
+devstack ai docs                    # list every page
+devstack ai docs guide/templates    # print one
+devstack ai docs --search "port"    # search it
+```
 
 ## Status
 
 🧪 **Beta (0.x).** The shared-services core, the deterministic generation pipeline,
-the data plane, multi-repo git, secrets, networking, and the interactive-DX lane
-(active context, shell integration, framework/monorepo templates, `devstack run`)
-are all implemented and green on `make ci` + `make determinism`. The full
-log/dashboard cockpit ([spec 16](docs/specs/16-logs-and-dashboard.md)) is the main
-in-flight item.
+the data plane, multi-repo git, secrets, networking, the interactive-DX lane
+(active context, shell integration, templates, `devstack run`) and the AI-agent
+surface ([spec 32](docs/specs/32-ai-agent-integration.md)) are all implemented and
+green on `make ci` + `make determinism`. The full log/dashboard cockpit
+([spec 16](docs/specs/16-logs-and-dashboard.md)) is the main in-flight item.
 
 ## Development
 
